@@ -173,7 +173,9 @@ int main(void) {
     }
 
     /* Wait for either: next X event OR the next tick */
-    struct timeval tv = {.tv_sec = refresh_sec, .tv_usec = 0};
+    struct timeval tv;
+    tv.tv_sec = refresh_sec;
+    tv.tv_usec = 0;
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(xfd, &fds);
