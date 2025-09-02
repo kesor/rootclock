@@ -10,7 +10,7 @@ static const char *time_fmt   = "%H:%M";
 static const int   show_date  = 1;
 static const char *date_font  = "Liberation Sans:style=Regular:size=26";
 static const char *date_color = "#333333";
-static const char *date_fmt   = "%a %d.%m.%Y";
+static const char *date_fmt   = "%A, %-d %B %Y";
 
 /* Refresh interval (seconds) */
 static const int   refresh_sec = 1;
