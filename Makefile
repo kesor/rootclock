@@ -1,6 +1,6 @@
 include config.mk
 
-SRC = rootclock.c
+SRC = rootclock.c drw.c util.c
 OBJ = ${SRC:.c=.o}
 
 all: rootclock
