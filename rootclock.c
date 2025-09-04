@@ -243,7 +243,7 @@ int main(void) {
     int r = select(xfd + 1, &fds, NULL, NULL, &tv);
     if (r == 0)
       need_redraw = 1;
-    else if (r < 0 && !running)
+    else if (r < 0 || !running)
       break;
   }
 
