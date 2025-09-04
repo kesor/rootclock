@@ -28,7 +28,7 @@ static volatile sig_atomic_t running = 1;
 static void
 signal_handler(int sig)
 {
-  (void)sig; /* unused parameter */
+  (void)sig;
   running = 0;
 }
 
@@ -37,21 +37,18 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
                                   Clr *bg_scm, Clr *time_scm, Clr *date_scm,
                                   const char *tstr, const char *dstr,
                                   int block_yoff, int spacing) {
-  /* Basic parameter validation */
   if (show_date_flag && (!df || !date_scm || !dstr)) {
     fprintf(stderr, "rootclock: invalid parameters for date display\n");
     return;
   }
   
-  /* fill background */
   drw_setscheme(drw, bg_scm);
   drw_rect(drw, rx, ry, rw, rh, 1, 0);
 
-  /* metrics */
   int time_h = tf->h;
   if (!tf->xfont) {
     fprintf(stderr, "rootclock: invalid font configuration\n");
-    return; /* Invalid font */
+    return;
   }
   int ascent_t = tf->xfont->ascent;
 
@@ -63,7 +60,6 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   int total_h = time_h + (show_date_flag ? (spacing + date_h) : 0);
   int base_y = ry + (rh - total_h) / 2 + ascent_t + block_yoff;
 
-  /* time width + centered x */
   drw_setfontset(drw, tf);
   unsigned int tw = drw_fontset_getwidth(drw, tstr);
   int tx = rx + (rw - (int)tw) / 2;
@@ -84,7 +80,6 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
     drw_text(drw, dx, dy, dw, date_h, 0, dstr, 0);
   }
 
-  /* copy this region to root */
   drw_map(drw, drw->root, rx, ry, rw, rh);
 }
 
@@ -119,7 +114,6 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     }
   }
 
-  /* monitors */
   XineramaScreenInfo *xi = NULL;
   int nmon = 1;
   if (XineramaIsActive(drw->dpy)) {
@@ -128,7 +122,6 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     if (xi && n > 0 && n <= MAX_MONITORS) {
       nmon = n;
     } else {
-      /* Invalid Xinerama result, fall back to single screen */
       fprintf(stderr, "rootclock: Xinerama query failed or returned invalid data, using single screen\n");
       if (xi) {
         XFree(xi);
@@ -141,9 +134,8 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     for (int i = 0; i < nmon; i++) {
       int rx = xi[i].x_org, ry = xi[i].y_org, rw = xi[i].width,
           rh = xi[i].height;
-      /* Basic validation of screen dimensions */
       if (rw <= 0 || rh <= 0 || rw > MAX_SCREEN_DIMENSION || rh > MAX_SCREEN_DIMENSION) {
-        continue; /* Skip invalid screen */
+        continue;
       }
       draw_block_for_region(drw, rx, ry, rw, rh, tf, df, show_date_flag, bg_scm,
                             time_scm, date_scm, tbuf,
@@ -163,7 +155,6 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
 int main(void) {
   setlocale(LC_ALL, "");
 
-  /* Set up signal handlers for graceful shutdown */
   struct sigaction sa;
   sa.sa_handler = signal_handler;
   sigemptyset(&sa.sa_mask);
@@ -178,7 +169,6 @@ int main(void) {
   int screen = DefaultScreen(dpy);
   Window root = RootWindow(dpy, screen);
 
-  /* drw + initial size */
   unsigned int rw = DisplayWidth(dpy, screen);
   unsigned int rh = DisplayHeight(dpy, screen);
   if (rw == 0 || rh == 0 || rw > MAX_SCREEN_DIMENSION || rh > MAX_SCREEN_DIMENSION) {
@@ -193,7 +183,6 @@ int main(void) {
     return 1;
   }
 
-  /* fonts */
   Fnt *tf = drw_fontset_create(drw, time_fonts, LENGTH(time_fonts));
   Fnt *df = show_date ? drw_fontset_create(drw, date_fonts, LENGTH(date_fonts))
                       : NULL;
@@ -216,7 +205,6 @@ int main(void) {
   if (!bg_scm || !time_scm || !date_scm)
     die("rootclock: color alloc failed");
 
-  /* events */
   XSelectInput(dpy, root, ExposureMask | StructureNotifyMask);
 
   /* loop: redraw on expose/resize and on timer ticks */
@@ -231,7 +219,6 @@ int main(void) {
         need_redraw = 1;
         break;
       case ConfigureNotify: {
-        /* root size changed */
         unsigned int nrw = DisplayWidth(dpy, screen);
         unsigned int nrh = DisplayHeight(dpy, screen);
         if (nrw != drw->w || nrh != drw->h)
@@ -255,12 +242,11 @@ int main(void) {
     FD_SET(xfd, &fds);
     int r = select(xfd + 1, &fds, NULL, NULL, &tv);
     if (r == 0)
-      need_redraw = 1; /* tick */
+      need_redraw = 1;
     else if (r < 0 && !running)
-      break; /* select interrupted by signal */
+      break;
   }
 
-  /* Cleanup resources before exit */
   free(bg_scm);
   free(time_scm);
   free(date_scm);
