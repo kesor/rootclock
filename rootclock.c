@@ -32,10 +32,7 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
                                   const char *tstr, const char *dstr,
                                   int block_yoff, int spacing) {
   /* Basic parameter validation */
-  if (!drw || !tf || !bg_scm || !time_scm || !tstr) {
-    return;
-  }
-  if (show_date_flag && (!df || !date_scm)) {
+  if (show_date_flag && (!df || !date_scm || !dstr)) {
     return;
   }
   
