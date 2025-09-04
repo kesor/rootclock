@@ -4,6 +4,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xinerama.h>
+#include <errno.h>
 #include <fontconfig/fontconfig.h>
 #include <locale.h>
 #include <signal.h>
@@ -27,9 +28,7 @@
 
 static volatile sig_atomic_t running = 1;
 
-static void
-signal_handler(int sig)
-{
+static void signal_handler(int sig) {
   (void)sig;
   running = 0;
 }
@@ -43,7 +42,7 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
     fprintf(stderr, "rootclock: invalid parameters for date display\n");
     return;
   }
-  
+
   drw_setscheme(drw, bg_scm);
   drw_rect(drw, rx, ry, rw, rh, 1, 0);
 
@@ -91,12 +90,12 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                        int block_y_off_s, int line_spacing_s) {
   char tbuf[TIME_BUF_SIZE], dbuf[DATE_BUF_SIZE];
   time_t now = time(NULL);
-  
+
   if (now == (time_t)-1) {
     fprintf(stderr, "rootclock: time() failed, unable to get current time\n");
     exit(1);
   }
-  
+
   struct tm *tm_info = localtime(&now);
   if (!tm_info) {
     fprintf(stderr, "rootclock: localtime() failed, unable to format time\n");
@@ -106,7 +105,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     /* strftime failed or buffer too small, use fallback */
     snprintf(tbuf, sizeof tbuf, "%s", FALLBACK_TIME);
   }
-  
+
   if (show_date_flag) {
     if (strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info) == 0) {
       /* strftime failed or buffer too small, use fallback */
@@ -122,7 +121,8 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     if (xi && n > 0 && n <= MAX_MONITORS) {
       nmon = n;
     } else {
-      fprintf(stderr, "rootclock: Xinerama query failed or returned invalid data, using single screen\n");
+      fprintf(stderr, "rootclock: Xinerama query failed or returned invalid "
+                      "data, using single screen\n");
       if (xi) {
         XFree(xi);
         xi = NULL;
@@ -134,7 +134,8 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     for (int i = 0; i < nmon; i++) {
       int rx = xi[i].x_org, ry = xi[i].y_org, rw = xi[i].width,
           rh = xi[i].height;
-      if (rw <= 0 || rh <= 0 || rw > MAX_SCREEN_DIMENSION || rh > MAX_SCREEN_DIMENSION) {
+      if (rw <= 0 || rh <= 0 || rw > MAX_SCREEN_DIMENSION ||
+          rh > MAX_SCREEN_DIMENSION) {
         continue;
       }
       draw_block_for_region(drw, rx, ry, rw, rh, tf, df, show_date_flag, bg_scm,
@@ -171,7 +172,8 @@ int main(void) {
 
   unsigned int rw = DisplayWidth(dpy, screen);
   unsigned int rh = DisplayHeight(dpy, screen);
-  if (rw == 0 || rh == 0 || rw > MAX_SCREEN_DIMENSION || rh > MAX_SCREEN_DIMENSION) {
+  if (rw == 0 || rh == 0 || rw > MAX_SCREEN_DIMENSION ||
+      rh > MAX_SCREEN_DIMENSION) {
     fprintf(stderr, "rootclock: invalid display dimensions %ux%u\n", rw, rh);
     XCloseDisplay(dpy);
     return 1;
@@ -243,14 +245,15 @@ int main(void) {
     int r = select(xfd + 1, &fds, NULL, NULL, &tv);
     if (r == 0)
       need_redraw = 1;
-    else if (r < 0 || !running)
+    else if ((r < 0 && errno != EINTR) || !running)
       break;
   }
 
   free(bg_scm);
   free(time_scm);
   free(date_scm);
-  if (drw) drw_free(drw);
+  if (drw)
+    drw_free(drw);
   XCloseDisplay(dpy);
 
   return 0;
