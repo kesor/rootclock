@@ -106,11 +106,9 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     /* strftime failed or buffer too small, use fallback */
     snprintf(tbuf, sizeof tbuf, "%s", FALLBACK_TIME);
   }
-    if (strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info) == 0 || dbuf[0] == '\0') {
+  
   if (show_date_flag) {
     if (strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info) == 0) {
-  if (show_date_flag) {
-    if (strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info) == 0 && dbuf[0] != '\0') {
       /* strftime failed or buffer too small, use fallback */
       snprintf(dbuf, sizeof dbuf, "%s", FALLBACK_DATE);
     }
