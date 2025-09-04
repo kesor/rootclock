@@ -164,9 +164,12 @@ int main(void) {
   setlocale(LC_ALL, "");
 
   /* Set up signal handlers for graceful shutdown */
-  signal(SIGINT, signal_handler);
-  signal(SIGTERM, signal_handler);
-
+  struct sigaction sa;
+  sa.sa_handler = signal_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGINT, &sa, NULL);
+  sigaction(SIGTERM, &sa, NULL);
   Display *dpy = XOpenDisplay(NULL);
   if (!dpy) {
     fputs("rootclock: cannot open display\n", stderr);
