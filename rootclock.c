@@ -22,6 +22,8 @@
 #define MAX_SCREEN_DIMENSION 32767
 #define FALLBACK_TIME "••••"
 #define FALLBACK_DATE "Unknown Date"
+#define TIME_BUF_SIZE 64
+#define DATE_BUF_SIZE 128
 
 static volatile sig_atomic_t running = 1;
 
@@ -87,7 +89,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                        Clr *bg_scm, Clr *time_scm, Clr *date_scm,
                        const char *time_fmt_s, const char *date_fmt_s,
                        int block_y_off_s, int line_spacing_s) {
-  char tbuf[64], dbuf[128];
+  char tbuf[TIME_BUF_SIZE], dbuf[DATE_BUF_SIZE];
   time_t now = time(NULL);
   
   if (now == (time_t)-1) {
