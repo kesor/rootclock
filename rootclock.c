@@ -109,13 +109,13 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   /* Safely format time string with bounds checking */
   if (strftime(tbuf, sizeof tbuf, time_fmt_s, tm_info) == 0) {
     /* strftime failed or buffer too small, use fallback */
-    strcpy(tbuf, FALLBACK_TIME);
+    snprintf(tbuf, sizeof tbuf, "%s", FALLBACK_TIME);
   }
   
   if (show_date_flag) {
     if (strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info) == 0) {
       /* strftime failed or buffer too small, use fallback */
-      strcpy(dbuf, FALLBACK_DATE);
+      snprintf(dbuf, sizeof dbuf, "%s", FALLBACK_DATE);
     }
   }
 
