@@ -6,6 +6,7 @@
 #include <X11/extensions/Xinerama.h>
 #include <fontconfig/fontconfig.h>
 #include <locale.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,17 +17,37 @@
 #include "drw.h"
 #include "util.h"
 
+static volatile sig_atomic_t running = 1;
+
+static void
+signal_handler(int sig)
+{
+  (void)sig; /* unused parameter */
+  running = 0;
+}
+
 static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
                                   Fnt *tf, Fnt *df, int show_date_flag,
                                   Clr *bg_scm, Clr *time_scm, Clr *date_scm,
                                   const char *tstr, const char *dstr,
                                   int block_yoff, int spacing) {
+  /* Basic parameter validation */
+  if (!drw || !tf || !bg_scm || !time_scm || !tstr) {
+    return;
+  }
+  if (show_date_flag && (!df || !date_scm)) {
+    return;
+  }
+  
   /* fill background */
   drw_setscheme(drw, bg_scm);
   drw_rect(drw, rx, ry, rw, rh, 1, 0);
 
   /* metrics */
   int time_h = tf->h;
+  if (!tf->xfont) {
+    return; /* Invalid font */
+  }
   int ascent_t = tf->xfont->ascent;
 
   int date_h = 0;
@@ -66,12 +87,41 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                        Clr *bg_scm, Clr *time_scm, Clr *date_scm,
                        const char *time_fmt_s, const char *date_fmt_s,
                        int block_y_off_s, int line_spacing_s) {
-  time_t now = time(NULL);
-  struct tm *tm_info = localtime(&now);
   char tbuf[64], dbuf[128];
-  strftime(tbuf, sizeof tbuf, time_fmt_s, tm_info);
-  if (show_date_flag)
-    strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info);
+  time_t now = time(NULL);
+  
+  if (now == (time_t)-1) {
+    /* time() failed, use fallback */
+    strcpy(tbuf, "--:--");
+    if (show_date_flag)
+      strcpy(dbuf, "Unknown Date");
+    goto skip_time_formatting;
+  }
+  
+  struct tm *tm_info = localtime(&now);
+  if (!tm_info) {
+    /* localtime() failed, use fallback */
+    strcpy(tbuf, "--:--");
+    if (show_date_flag)
+      strcpy(dbuf, "Unknown Date");
+    goto skip_time_formatting;
+  }
+  
+  /* Safely format time string with bounds checking */
+  if (strftime(tbuf, sizeof tbuf, time_fmt_s, tm_info) == 0) {
+    /* strftime failed or buffer too small, use fallback */
+    strcpy(tbuf, "--:--");
+  }
+  
+  if (show_date_flag) {
+    if (strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info) == 0) {
+      /* strftime failed or buffer too small, use fallback */
+      strcpy(dbuf, "Unknown Date");
+    }
+  }
+
+skip_time_formatting:
+  ; /* empty statement after label for C89 compliance */
 
   /* monitors */
   XineramaScreenInfo *xi = NULL;
@@ -79,14 +129,25 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   if (XineramaIsActive(drw->dpy)) {
     int n;
     xi = XineramaQueryScreens(drw->dpy, &n);
-    if (xi && n > 0)
+    if (xi && n > 0 && n <= 64) { /* reasonable limit to prevent overflow */
       nmon = n;
+    } else {
+      /* Invalid Xinerama result, fall back to single screen */
+      if (xi) {
+        XFree(xi);
+        xi = NULL;
+      }
+    }
   }
 
   if (xi) {
     for (int i = 0; i < nmon; i++) {
       int rx = xi[i].x_org, ry = xi[i].y_org, rw = xi[i].width,
           rh = xi[i].height;
+      /* Basic validation of screen dimensions */
+      if (rw <= 0 || rh <= 0 || rw > 32767 || rh > 32767) {
+        continue; /* Skip invalid screen */
+      }
       draw_block_for_region(drw, rx, ry, rw, rh, tf, df, show_date_flag, bg_scm,
                             time_scm, date_scm, tbuf,
                             show_date_flag ? dbuf : NULL, block_y_off_s,
@@ -105,6 +166,10 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
 int main(void) {
   setlocale(LC_ALL, "");
 
+  /* Set up signal handlers for graceful shutdown */
+  signal(SIGINT, signal_handler);
+  signal(SIGTERM, signal_handler);
+
   Display *dpy = XOpenDisplay(NULL);
   if (!dpy) {
     fputs("rootclock: cannot open display\n", stderr);
@@ -116,9 +181,17 @@ int main(void) {
   /* drw + initial size */
   unsigned int rw = DisplayWidth(dpy, screen);
   unsigned int rh = DisplayHeight(dpy, screen);
-  Drw *drw = drw_create(dpy, screen, root, rw, rh);
-  if (!drw)
+  if (rw == 0 || rh == 0 || rw > 32767 || rh > 32767) {
+    fprintf(stderr, "rootclock: invalid display dimensions %ux%u\n", rw, rh);
+    XCloseDisplay(dpy);
     return 1;
+  }
+  Drw *drw = drw_create(dpy, screen, root, rw, rh);
+  if (!drw) {
+    fprintf(stderr, "rootclock: failed to create drawing context\n");
+    XCloseDisplay(dpy);
+    return 1;
+  }
 
   /* fonts */
   Fnt *tf = drw_fontset_create(drw, time_fonts, LENGTH(time_fonts));
@@ -149,7 +222,7 @@ int main(void) {
   /* loop: redraw on expose/resize and on timer ticks */
   int xfd = ConnectionNumber(dpy);
   int need_redraw = 1;
-  for (;;) {
+  while (running) {
     while (XPending(dpy)) {
       XEvent ev;
       XNextEvent(dpy, &ev);
@@ -183,8 +256,16 @@ int main(void) {
     int r = select(xfd + 1, &fds, NULL, NULL, &tv);
     if (r == 0)
       need_redraw = 1; /* tick */
+    else if (r < 0 && !running)
+      break; /* select interrupted by signal */
   }
 
-  /* never reached */
+  /* Cleanup resources before exit */
+  if (bg_scm) free(bg_scm);
+  if (time_scm) free(time_scm);
+  if (date_scm) free(date_scm);
+  if (drw) drw_free(drw);
+  XCloseDisplay(dpy);
+
   return 0;
 }
