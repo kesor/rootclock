@@ -2,12 +2,3 @@
 *.o
 config.h
 rootclock
-
-# Common temporary files
-*~
-.*.swp
-.*.swo
-
-# OS-specific files
-.DS_Store
-Thumbs.db

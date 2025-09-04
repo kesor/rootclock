@@ -17,6 +17,12 @@
 #include "drw.h"
 #include "util.h"
 
+/* Constants for validation limits */
+#define MAX_MONITORS 64
+#define MAX_SCREEN_DIMENSION 32767
+#define FALLBACK_TIME "••••"
+#define FALLBACK_DATE "Unknown Date"
+
 static volatile sig_atomic_t running = 1;
 
 static void
@@ -33,6 +39,7 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
                                   int block_yoff, int spacing) {
   /* Basic parameter validation */
   if (show_date_flag && (!df || !date_scm || !dstr)) {
+    fprintf(stderr, "rootclock: invalid parameters for date display\n");
     return;
   }
   
@@ -43,6 +50,7 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   /* metrics */
   int time_h = tf->h;
   if (!tf->xfont) {
+    fprintf(stderr, "rootclock: invalid font configuration\n");
     return; /* Invalid font */
   }
   int ascent_t = tf->xfont->ascent;
@@ -88,37 +96,28 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   time_t now = time(NULL);
   
   if (now == (time_t)-1) {
-    /* time() failed, use fallback */
-    strcpy(tbuf, "--:--");
-    if (show_date_flag)
-      strcpy(dbuf, "Unknown Date");
-    goto skip_time_formatting;
+    fprintf(stderr, "rootclock: time() failed, unable to get current time\n");
+    exit(1);
   }
   
   struct tm *tm_info = localtime(&now);
   if (!tm_info) {
-    /* localtime() failed, use fallback */
-    strcpy(tbuf, "--:--");
-    if (show_date_flag)
-      strcpy(dbuf, "Unknown Date");
-    goto skip_time_formatting;
+    fprintf(stderr, "rootclock: localtime() failed, unable to format time\n");
+    exit(1);
   }
   
   /* Safely format time string with bounds checking */
   if (strftime(tbuf, sizeof tbuf, time_fmt_s, tm_info) == 0) {
     /* strftime failed or buffer too small, use fallback */
-    strcpy(tbuf, "--:--");
+    strcpy(tbuf, FALLBACK_TIME);
   }
   
   if (show_date_flag) {
     if (strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info) == 0) {
       /* strftime failed or buffer too small, use fallback */
-      strcpy(dbuf, "Unknown Date");
+      strcpy(dbuf, FALLBACK_DATE);
     }
   }
-
-skip_time_formatting:
-  ; /* empty statement after label for C89 compliance */
 
   /* monitors */
   XineramaScreenInfo *xi = NULL;
@@ -126,10 +125,11 @@ skip_time_formatting:
   if (XineramaIsActive(drw->dpy)) {
     int n;
     xi = XineramaQueryScreens(drw->dpy, &n);
-    if (xi && n > 0 && n <= 64) { /* reasonable limit to prevent overflow */
+    if (xi && n > 0 && n <= MAX_MONITORS) {
       nmon = n;
     } else {
       /* Invalid Xinerama result, fall back to single screen */
+      fprintf(stderr, "rootclock: Xinerama query failed or returned invalid data, using single screen\n");
       if (xi) {
         XFree(xi);
         xi = NULL;
@@ -142,7 +142,7 @@ skip_time_formatting:
       int rx = xi[i].x_org, ry = xi[i].y_org, rw = xi[i].width,
           rh = xi[i].height;
       /* Basic validation of screen dimensions */
-      if (rw <= 0 || rh <= 0 || rw > 32767 || rh > 32767) {
+      if (rw <= 0 || rh <= 0 || rw > MAX_SCREEN_DIMENSION || rh > MAX_SCREEN_DIMENSION) {
         continue; /* Skip invalid screen */
       }
       draw_block_for_region(drw, rx, ry, rw, rh, tf, df, show_date_flag, bg_scm,
@@ -178,7 +178,7 @@ int main(void) {
   /* drw + initial size */
   unsigned int rw = DisplayWidth(dpy, screen);
   unsigned int rh = DisplayHeight(dpy, screen);
-  if (rw == 0 || rh == 0 || rw > 32767 || rh > 32767) {
+  if (rw == 0 || rh == 0 || rw > MAX_SCREEN_DIMENSION || rh > MAX_SCREEN_DIMENSION) {
     fprintf(stderr, "rootclock: invalid display dimensions %ux%u\n", rw, rh);
     XCloseDisplay(dpy);
     return 1;
