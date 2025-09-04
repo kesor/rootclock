@@ -261,9 +261,9 @@ int main(void) {
   }
 
   /* Cleanup resources before exit */
-  if (bg_scm) free(bg_scm);
-  if (time_scm) free(time_scm);
-  if (date_scm) free(date_scm);
+  free(bg_scm);
+  free(time_scm);
+  free(date_scm);
   if (drw) drw_free(drw);
   XCloseDisplay(dpy);
 
