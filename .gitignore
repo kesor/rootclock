@@ -1,2 +1,4 @@
+# Build artifacts
+*.o
 config.h
 rootclock
