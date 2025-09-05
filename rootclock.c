@@ -25,7 +25,7 @@
 #define FALLBACK_DATE "Unknown Date"
 #define TIME_BUF_SIZE 64
 #define DATE_BUF_SIZE 128
-#define MIN_UPDATE_INTERVAL_MS 50  /* Minimum 50ms between forced updates */
+#define MIN_UPDATE_INTERVAL_MS 50 /* Minimum 50ms between forced updates */
 
 static volatile sig_atomic_t running = 1;
 
@@ -281,13 +281,14 @@ int main(void) {
     if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
       /* Get current position within the second (0-999999 microseconds) */
       long usec_in_sec = (ts.tv_nsec / 1000) % 1000000;
-      
+
       if (usec_in_sec < 950000) {
         /* We're not too close to the next second, wait until 50ms before it */
         tv.tv_sec = 0;
         tv.tv_usec = (950000 - usec_in_sec);
       } else {
-        /* We're very close to or past 950ms mark, wait for next second + 50ms */
+        /* We're very close to or past 950ms mark, wait for next second + 50ms
+         */
         tv.tv_sec = refresh_sec;
         tv.tv_usec = (1050000 - usec_in_sec) % 1000000;
       }
