@@ -25,6 +25,7 @@
 #define FALLBACK_DATE "Unknown Date"
 #define TIME_BUF_SIZE 64
 #define DATE_BUF_SIZE 128
+#define MIN_UPDATE_INTERVAL_MS 50  /* Minimum 50ms between forced updates */
 
 static volatile sig_atomic_t running = 1;
 
@@ -32,6 +33,9 @@ static volatile sig_atomic_t running = 1;
 static XineramaScreenInfo *cached_monitors = NULL;
 static int cached_monitor_count = 0;
 static int monitors_dirty = 1; /* force initial query */
+
+/* Time tracking for consistent updates */
+static time_t last_displayed_time = 0;
 
 static void signal_handler(int sig) {
   (void)sig;
@@ -125,6 +129,9 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     fprintf(stderr, "rootclock: time() failed, unable to get current time\n");
     exit(1);
   }
+
+  /* Update last_displayed_time for consistent tracking */
+  last_displayed_time = now;
 
   struct tm *tm_info = localtime(&now);
   if (!tm_info) {
@@ -256,33 +263,49 @@ int main(void) {
       }
     }
 
+    /* Check if time has changed (for second-precise updates) */
+    time_t current_time = time(NULL);
+    if (current_time != last_displayed_time && current_time != (time_t)-1) {
+      need_redraw = 1;
+    }
+
     if (need_redraw) {
       render_all(drw, tf, df, show_date, bg_scm, time_scm, date_scm, time_fmt,
                  date_fmt, block_y_off, line_spacing);
       need_redraw = 0;
     }
 
-    /* Calculate time until next wall clock boundary */
+    /* Calculate timeout for next update - ensure reliable second updates */
     struct timeval tv;
     struct timespec ts;
     if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
-      /* Align to next second boundary */
-      long usec_until_next = (1000000 - (ts.tv_nsec / 1000)) % 1000000;
-      tv.tv_sec = (usec_until_next == 0) ? refresh_sec : 0;
-      tv.tv_usec = usec_until_next;
+      /* Get current position within the second (0-999999 microseconds) */
+      long usec_in_sec = (ts.tv_nsec / 1000) % 1000000;
+      
+      if (usec_in_sec < 950000) {
+        /* We're not too close to the next second, wait until 50ms before it */
+        tv.tv_sec = 0;
+        tv.tv_usec = (950000 - usec_in_sec);
+      } else {
+        /* We're very close to or past 950ms mark, wait for next second + 50ms */
+        tv.tv_sec = refresh_sec;
+        tv.tv_usec = (1050000 - usec_in_sec) % 1000000;
+      }
     } else {
-      /* Fallback if clock_gettime fails */
+      /* Fallback to simple periodic updates */
       tv.tv_sec = refresh_sec;
       tv.tv_usec = 0;
     }
+
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(xfd, &fds);
     int r = select(xfd + 1, &fds, NULL, NULL, &tv);
-    if (r == 0)
-      need_redraw = 1;
-    else if ((r < 0 && errno != EINTR) || !running)
+    if (r == 0) {
+      need_redraw = 1; /* timeout - force redraw */
+    } else if ((r < 0 && errno != EINTR) || !running) {
       break;
+    }
   }
 
   free(bg_scm);
