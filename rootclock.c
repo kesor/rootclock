@@ -28,9 +28,39 @@
 
 static volatile sig_atomic_t running = 1;
 
+/* Cached Xinerama monitor information */
+static XineramaScreenInfo *cached_monitors = NULL;
+static int cached_monitor_count = 0;
+static int monitors_dirty = 1; /* force initial query */
+
 static void signal_handler(int sig) {
   (void)sig;
   running = 0;
+}
+
+static void update_monitor_cache(Display *dpy) {
+  if (cached_monitors) {
+    XFree(cached_monitors);
+    cached_monitors = NULL;
+    cached_monitor_count = 0;
+  }
+
+  cached_monitor_count = 1; /* Default fallback */
+  if (XineramaIsActive(dpy)) {
+    int n;
+    XineramaScreenInfo *xi = XineramaQueryScreens(dpy, &n);
+    if (xi && n > 0 && n <= MAX_MONITORS) {
+      cached_monitors = xi;
+      cached_monitor_count = n;
+    } else {
+      fprintf(stderr, "rootclock: Xinerama query failed or returned invalid "
+                      "data, using single screen\n");
+      if (xi) {
+        XFree(xi);
+      }
+    }
+  }
+  monitors_dirty = 0;
 }
 
 static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
@@ -115,20 +145,14 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
 
   XineramaScreenInfo *xi = NULL;
   int nmon = 1;
-  if (XineramaIsActive(drw->dpy)) {
-    int n;
-    xi = XineramaQueryScreens(drw->dpy, &n);
-    if (xi && n > 0 && n <= MAX_MONITORS) {
-      nmon = n;
-    } else {
-      fprintf(stderr, "rootclock: Xinerama query failed or returned invalid "
-                      "data, using single screen\n");
-      if (xi) {
-        XFree(xi);
-        xi = NULL;
-      }
-    }
+
+  /* Use cached monitor information */
+  if (monitors_dirty) {
+    update_monitor_cache(drw->dpy);
   }
+
+  xi = cached_monitors;
+  nmon = cached_monitor_count;
 
   if (xi) {
     for (int i = 0; i < nmon; i++) {
@@ -143,7 +167,6 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                             show_date_flag ? dbuf : NULL, block_y_off_s,
                             line_spacing_s);
     }
-    XFree(xi);
   } else {
     int rw = DisplayWidth(drw->dpy, drw->screen);
     int rh = DisplayHeight(drw->dpy, drw->screen);
@@ -225,6 +248,7 @@ int main(void) {
         unsigned int nrh = DisplayHeight(dpy, screen);
         if (nrw != drw->w || nrh != drw->h)
           drw_resize(drw, nrw, nrh);
+        monitors_dirty = 1; /* mark monitors as needing refresh */
         need_redraw = 1;
       } break;
       default:
@@ -238,7 +262,20 @@ int main(void) {
       need_redraw = 0;
     }
 
-    struct timeval tv = {.tv_sec = refresh_sec, .tv_usec = 0};
+    /* Calculate time until next wall clock boundary */
+    struct timeval tv;
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+      /* Align to next second boundary */
+      long usec_until_next = 1000000 - (ts.tv_nsec / 1000);
+      if (usec_until_next == 1000000) usec_until_next = 0;
+      tv.tv_sec = (usec_until_next == 0) ? refresh_sec : 0;
+      tv.tv_usec = usec_until_next;
+    } else {
+      /* Fallback if clock_gettime fails */
+      tv.tv_sec = refresh_sec;
+      tv.tv_usec = 0;
+    }
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(xfd, &fds);
@@ -252,6 +289,8 @@ int main(void) {
   free(bg_scm);
   free(time_scm);
   free(date_scm);
+  if (cached_monitors)
+    XFree(cached_monitors);
   if (drw)
     drw_free(drw);
   XCloseDisplay(dpy);
