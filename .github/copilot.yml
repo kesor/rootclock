@@ -1,0 +1,2 @@
+setup:
+  - run: nix develop
