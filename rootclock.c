@@ -290,7 +290,8 @@ int main(void) {
         /* We're very close to or past 950ms mark, wait for next second + 50ms
          */
         tv.tv_sec = 0;
-        tv.tv_usec = (1050000 - usec_in_sec) % 1000000;
+        tv.tv_usec = (1050000 - usec_in_sec);
+        if (tv.tv_usec < 0) tv.tv_usec = 0;
       }
     } else {
       /* Fallback to simple periodic updates */
