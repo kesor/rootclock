@@ -1,5 +1,4 @@
 /* See LICENSE file for copyright and license details. */
-#include <X11/Xft/Xft.h>
 
 typedef struct {
 	Cursor cursor;
@@ -22,7 +21,6 @@ typedef struct {
 	int screen;
 	Window root;
 	Drawable drawable;
-	XftDraw *xftdraw;
 	GC gc;
 	Clr *scheme;
 	Fnt *fonts;

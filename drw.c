@@ -57,9 +57,6 @@ drw_create(Display *dpy, int screen, Window root, unsigned int w, unsigned int h
 	drw->w = w;
 	drw->h = h;
 	drw->drawable = XCreatePixmap(dpy, root, w, h, DefaultDepth(dpy, screen));
-	drw->xftdraw = XftDrawCreate(dpy, drw->drawable,
-	                             DefaultVisual(dpy, screen),
-	                             DefaultColormap(dpy, screen));
 	drw->gc = XCreateGC(dpy, root, 0, NULL);
 	XSetLineAttributes(dpy, drw->gc, 1, LineSolid, CapButt, JoinMiter);
 
@@ -76,12 +73,7 @@ drw_resize(Drw *drw, unsigned int w, unsigned int h)
 	drw->h = h;
 	if (drw->drawable)
 		XFreePixmap(drw->dpy, drw->drawable);
-	if (drw->xftdraw)
-		XftDrawDestroy(drw->xftdraw);
 	drw->drawable = XCreatePixmap(drw->dpy, drw->root, w, h, DefaultDepth(drw->dpy, drw->screen));
-	drw->xftdraw = XftDrawCreate(drw->dpy, drw->drawable,
-	                             DefaultVisual(drw->dpy, drw->screen),
-	                             DefaultColormap(drw->dpy, drw->screen));
 }
 
 void
@@ -91,8 +83,6 @@ drw_free(Drw *drw)
 		return;
 	if (drw->drawable)
 		XFreePixmap(drw->dpy, drw->drawable);
-	if (drw->xftdraw)
-		XftDrawDestroy(drw->xftdraw);
 	if (drw->gc)
 		XFreeGC(drw->dpy, drw->gc);
 	drw_fontset_free(drw->fonts);
@@ -264,7 +254,9 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lp
 		XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
 		if (w < lpad)
 			return x + w;
-		d = drw->xftdraw;
+		d = XftDrawCreate(drw->dpy, drw->drawable,
+		                  DefaultVisual(drw->dpy, drw->screen),
+		                  DefaultColormap(drw->dpy, drw->screen));
 		x += lpad;
 		w -= lpad;
 	}
@@ -388,6 +380,8 @@ no_match:
 			}
 		}
 	}
+	if (d)
+		XftDrawDestroy(d);
 
 	return x + (render ? w : 0);
 }
