@@ -291,13 +291,14 @@ int main(void) {
           /* We're very close to or past 950ms mark, wait for next second + 50ms */
           tv.tv_sec = 0;
           tv.tv_usec = (1050000 - usec_in_sec);
-          if (tv.tv_usec < 0) tv.tv_usec = 0;
+          if (tv.tv_usec < 0)
+            tv.tv_usec = 0;
         }
       } else {
         /* For longer intervals, align to time boundaries based on refresh_sec */
         time_t current_time = ts.tv_sec;
         time_t next_boundary;
-        
+
         if (refresh_sec >= 3600) {
           /* Hourly or longer: align to hour boundaries */
           struct tm *tm_info = localtime(&current_time);
@@ -316,8 +317,10 @@ int main(void) {
             tm_info->tm_sec = 0;
             /* For refresh_sec like 59, we want next minute boundary */
             /* For refresh_sec like 120, we want appropriate minute alignment */
-            int minute_interval = (refresh_sec + 30) / 60; /* round to nearest minute */
-            tm_info->tm_min = ((tm_info->tm_min / minute_interval) + 1) * minute_interval;
+            int minute_interval =
+                (refresh_sec + 30) / 60; /* round to nearest minute */
+            tm_info->tm_min =
+                ((tm_info->tm_min / minute_interval) + 1) * minute_interval;
             next_boundary = mktime(tm_info);
           } else {
             next_boundary = current_time + refresh_sec;
@@ -326,12 +329,12 @@ int main(void) {
           /* Short intervals: align to second boundaries with refresh_sec spacing */
           next_boundary = ((current_time / refresh_sec) + 1) * refresh_sec;
         }
-        
+
         time_t wait_time = next_boundary - current_time;
         if (wait_time <= 0) {
           wait_time = 1; /* minimum wait */
         }
-        
+
         /* Wake up 50ms before the boundary for smooth updates */
         if (wait_time > 1) {
           tv.tv_sec = wait_time - 1;
