@@ -275,23 +275,75 @@ int main(void) {
       need_redraw = 0;
     }
 
-    /* Calculate timeout for next update - ensure reliable second updates */
+    /* Calculate timeout for next update - align to appropriate time boundaries */
     struct timeval tv;
     struct timespec ts;
     if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
-      /* Get current position within the second (0-999999 microseconds) */
-      long usec_in_sec = (ts.tv_nsec / 1000) % 1000000;
+      if (refresh_sec == 1) {
+        /* For 1-second updates, use precise second-boundary alignment */
+        long usec_in_sec = (ts.tv_nsec / 1000) % 1000000;
 
-      if (usec_in_sec < 950000) {
-        /* We're not too close to the next second, wait until 50ms before it */
-        tv.tv_sec = 0;
-        tv.tv_usec = (950000 - usec_in_sec);
+        if (usec_in_sec < 950000) {
+          /* We're not too close to the next second, wait until 50ms before it */
+          tv.tv_sec = 0;
+          tv.tv_usec = (950000 - usec_in_sec);
+        } else {
+          /* We're very close to or past 950ms mark, wait for next second + 50ms */
+          tv.tv_sec = 0;
+          tv.tv_usec = (1050000 - usec_in_sec);
+          if (tv.tv_usec < 0) tv.tv_usec = 0;
+        }
       } else {
-        /* We're very close to or past 950ms mark, wait for next second + 50ms
-         */
-        tv.tv_sec = 0;
-        tv.tv_usec = (1050000 - usec_in_sec);
-        if (tv.tv_usec < 0) tv.tv_usec = 0;
+        /* For longer intervals, align to time boundaries based on refresh_sec */
+        time_t current_time = ts.tv_sec;
+        time_t next_boundary;
+        
+        if (refresh_sec >= 3600) {
+          /* Hourly or longer: align to hour boundaries */
+          struct tm *tm_info = localtime(&current_time);
+          if (tm_info) {
+            tm_info->tm_sec = 0;
+            tm_info->tm_min = 0;
+            tm_info->tm_hour++;
+            next_boundary = mktime(tm_info);
+          } else {
+            next_boundary = current_time + refresh_sec;
+          }
+        } else if (refresh_sec >= 60) {
+          /* Minute-level intervals: align to minute boundaries */
+          struct tm *tm_info = localtime(&current_time);
+          if (tm_info) {
+            tm_info->tm_sec = 0;
+            /* For refresh_sec like 59, we want next minute boundary */
+            /* For refresh_sec like 120, we want appropriate minute alignment */
+            int minute_interval = (refresh_sec + 30) / 60; /* round to nearest minute */
+            tm_info->tm_min = ((tm_info->tm_min / minute_interval) + 1) * minute_interval;
+            next_boundary = mktime(tm_info);
+          } else {
+            next_boundary = current_time + refresh_sec;
+          }
+        } else {
+          /* Short intervals: align to second boundaries with refresh_sec spacing */
+          next_boundary = ((current_time / refresh_sec) + 1) * refresh_sec;
+        }
+        
+        time_t wait_time = next_boundary - current_time;
+        if (wait_time <= 0) {
+          wait_time = 1; /* minimum wait */
+        }
+        
+        /* Wake up 50ms before the boundary for smooth updates */
+        if (wait_time > 1) {
+          tv.tv_sec = wait_time - 1;
+          tv.tv_usec = 950000; /* 950ms into the previous second */
+        } else {
+          tv.tv_sec = 0;
+          tv.tv_usec = wait_time * 1000000 - 50000; /* 50ms before */
+          if (tv.tv_usec < 0) {
+            tv.tv_sec = 0;
+            tv.tv_usec = 0;
+          }
+        }
       }
     } else {
       /* Fallback to simple periodic updates */
