@@ -267,8 +267,7 @@ int main(void) {
     struct timespec ts;
     if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
       /* Align to next second boundary */
-      long usec_until_next = 1000000 - (ts.tv_nsec / 1000);
-      if (usec_until_next == 1000000) usec_until_next = 0;
+      long usec_until_next = (1000000 - (ts.tv_nsec / 1000)) % 1000000;
       tv.tv_sec = (usec_until_next == 0) ? refresh_sec : 0;
       tv.tv_usec = usec_until_next;
     } else {
