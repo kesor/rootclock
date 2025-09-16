@@ -439,16 +439,18 @@ int main(void) {
           }
         } else if (refresh_sec >= 60) {
           /* Minute-level intervals: align to minute boundaries */
-          struct tm *tm_minute = localtime(&boundary_time);
-          if (tm_minute) {
-            tm_minute->tm_sec = 0;
+          struct tm tm_minute_buf;
+          struct tm *tm_minute_ptr = localtime(&boundary_time);
+          if (tm_minute_ptr) {
+            tm_minute_buf = *tm_minute_ptr; /* Copy to local storage */
+            tm_minute_buf.tm_sec = 0;
             /* For refresh_sec like 59, we want next minute boundary */
             /* For refresh_sec like 120, we want appropriate minute alignment */
             int minute_interval =
                 (refresh_sec + 30) / 60; /* round to nearest minute */
-            tm_minute->tm_min =
-                ((tm_minute->tm_min / minute_interval) + 1) * minute_interval;
-            next_boundary = mktime(tm_minute);
+            tm_minute_buf.tm_min =
+                ((tm_minute_buf.tm_min / minute_interval) + 1) * minute_interval;
+            next_boundary = mktime(&tm_minute_buf);
           } else {
             next_boundary = boundary_time + refresh_sec;
           }
