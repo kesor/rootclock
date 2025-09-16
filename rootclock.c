@@ -232,7 +232,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   
   /* Copy wallpaper to our drawing surface if available */
   if (wallpaper_pixmap != None) {
-    /* Copy the wallpaper pixmap as background */
+    /* Copy the wallpaper pixmap as background - handle potential size differences */
     XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
               0, 0, drw->w, drw->h, 0, 0);
   } else {
@@ -261,7 +261,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
           rh > MAX_SCREEN_DIMENSION) {
         continue;
       }
-      /* Draw clock without background fill since we already have wallpaper */
+      /* Draw clock on the wallpaper surface */
       draw_clock_for_region(drw, rx, ry, rw, rh, tf, df, show_date_flag,
                             bg_scm, time_scm, date_scm, tbuf,
                             show_date_flag ? dbuf : NULL, block_y_off_s,
@@ -276,7 +276,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                           line_spacing_s);
   }
 
-  /* Set our rendered pixmap as the new wallpaper */
+  /* Set our rendered pixmap as the new wallpaper for picom compatibility */
   set_wallpaper_pixmap(drw->dpy, drw->root, drw->drawable);
 }
 

@@ -9,6 +9,7 @@ It is designed to run alongside dwm or other window managers, without interferin
 * Optional second line with the date.
 * Customizable fonts, colors, and time/date formats via `config.def.h`.
 * Lightweight, no dependencies beyond Xlib and Xft.
+* Compatible with compositors like picom by properly setting wallpaper properties.
 
 ## Requirements
 
