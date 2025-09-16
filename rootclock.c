@@ -28,6 +28,10 @@
 #define DATE_BUF_SIZE 128
 #define MIN_UPDATE_INTERVAL_MS 50 /* Minimum 50ms between forced updates */
 
+/* UI constants */
+#define TEXT_BACKGROUND_PADDING 8 /* Padding around text background rectangle */
+#define FALLBACK_ASCENT_RATIO 0.75 /* Ascent ratio when xfont info unavailable */
+
 /* X11 Atoms for wallpaper handling (picom compatibility) */
 static Atom _XROOTPMAP_ID = None;
 static Atom ESETROOT_PMAP_ID = None;
@@ -43,11 +47,13 @@ static int monitors_dirty = 1; /* force initial query */
 static time_t last_displayed_time = 0;
 
 /* X11 error handler */
+static volatile int x11_error_occurred = 0;
 static int x11_error_handler(Display *dpy, XErrorEvent *e) {
   char error_text[256];
   XGetErrorText(dpy, e->error_code, error_text, sizeof(error_text));
-  fprintf(stderr, "rootclock: X11 error: %s (code %d, request %d, minor %d)\n",
-          error_text, e->error_code, e->request_code, e->minor_code);
+  fprintf(stderr, "rootclock: X11 error: %s (code %d, request %d, minor %d, resource 0x%lx)\n",
+          error_text, e->error_code, e->request_code, e->minor_code, e->resourceid);
+  x11_error_occurred = 1;
   /* Don't exit, just log the error and continue */
   return 0;
 }
@@ -165,6 +171,12 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
                                   Clr *bg_scm, Clr *time_scm, Clr *date_scm,
                                   const char *tstr, const char *dstr,
                                   int block_yoff, int spacing) {
+  /* Validate essential parameters */
+  if (!drw || !tf || !bg_scm || !time_scm || !tstr) {
+    fprintf(stderr, "rootclock: invalid parameters for drawing\n");
+    return;
+  }
+  
   if (show_date_flag && (!df || !date_scm || !dstr)) {
     fprintf(stderr, "rootclock: invalid parameters for date display\n");
     return;
@@ -192,11 +204,11 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   }
 
   /* Calculate text positioning */  
-  int ascent_t = tf->xfont ? tf->xfont->ascent : (int)time_h * 3 / 4;
+  int ascent_t = tf->xfont ? tf->xfont->ascent : (int)(time_h * FALLBACK_ASCENT_RATIO);
   int ty = base_y;
   
   /* Draw a subtle background rectangle behind the text for better contrast */
-  int padding = 8;
+  int padding = TEXT_BACKGROUND_PADDING;
   int bg_x = tx - padding;
   int bg_y = ty - padding;
   int bg_w = tw + 2 * padding;
@@ -269,24 +281,30 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   
   /* Copy wallpaper to our drawing surface if available */
   if (wallpaper_pixmap != None) {
-    /* Get wallpaper pixmap dimensions - we already validated it exists */
+    /* Get wallpaper pixmap dimensions - with error handling for race conditions */
     unsigned int pixmap_w, pixmap_h, pixmap_border, pixmap_depth;
     Window pixmap_root;
-    XGetGeometry(drw->dpy, wallpaper_pixmap, &pixmap_root,
-                 NULL, NULL, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth);
     
-    unsigned int copy_w = drw->w < pixmap_w ? drw->w : pixmap_w;
-    unsigned int copy_h = drw->h < pixmap_h ? drw->h : pixmap_h;
-    XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
-              0, 0, copy_w, copy_h, 0, 0);
-    
-    /* If the drawable is larger than the pixmap, fill the rest with background color */
-    if (copy_w < drw->w || copy_h < drw->h) {
+    /* Double-check pixmap validity as it might have become invalid */
+    if (XGetGeometry(drw->dpy, wallpaper_pixmap, &pixmap_root,
+                     NULL, NULL, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)) {
+      unsigned int copy_w = drw->w < pixmap_w ? drw->w : pixmap_w;
+      unsigned int copy_h = drw->h < pixmap_h ? drw->h : pixmap_h;
+      XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
+                0, 0, copy_w, copy_h, 0, 0);
+      
+      /* If the drawable is larger than the pixmap, fill the rest with background color */
+      if (copy_w < drw->w || copy_h < drw->h) {
+        drw_setscheme(drw, bg_scm);
+        if (copy_w < drw->w)
+          drw_rect(drw, copy_w, 0, drw->w - copy_w, drw->h, 1, 0);
+        if (copy_h < drw->h)
+          drw_rect(drw, 0, copy_h, drw->w, drw->h - copy_h, 1, 0);
+      }
+    } else {
+      /* Pixmap became invalid, fallback to background color */
       drw_setscheme(drw, bg_scm);
-      if (copy_w < drw->w)
-        drw_rect(drw, copy_w, 0, drw->w - copy_w, drw->h, 1, 0);
-      if (copy_h < drw->h)
-        drw_rect(drw, 0, copy_h, drw->w, drw->h - copy_h, 1, 0);
+      drw_rect(drw, 0, 0, drw->w, drw->h, 1, 0);
     }
   } else {
     /* No wallpaper found, fill with background color */
@@ -330,7 +348,13 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   }
 
   /* Set our rendered pixmap as the new wallpaper for picom compatibility */
+  x11_error_occurred = 0; /* Reset error flag */
   set_wallpaper_pixmap(drw->dpy, drw->root, drw->drawable);
+  XSync(drw->dpy, False); /* Force synchronization to catch any errors */
+  
+  if (x11_error_occurred) {
+    fprintf(stderr, "rootclock: Warning - X11 error occurred during wallpaper update\n");
+  }
 }
 
 int main(void) {
