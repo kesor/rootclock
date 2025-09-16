@@ -72,6 +72,16 @@ static void update_monitor_cache(Display *dpy) {
   monitors_dirty = 0;
 }
 
+/* Centralized localtime() wrapper to ensure single call per time value */
+static int get_local_time(time_t t, struct tm *result) {
+  struct tm *tm_ptr = localtime(&t);
+  if (!tm_ptr) {
+    return 0; /* failure */
+  }
+  *result = *tm_ptr; /* Copy to caller's storage */
+  return 1; /* success */
+}
+
 /* Initialize wallpaper-related X11 atoms */
 static void init_wallpaper_atoms(Display *dpy) {
   _XROOTPMAP_ID = XInternAtom(dpy, "_XROOTPMAP_ID", False);
@@ -216,18 +226,18 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   /* Update last_displayed_time for consistent tracking */
   last_displayed_time = now;
 
-  struct tm *tm_info = localtime(&now);
-  if (!tm_info) {
+  struct tm tm_info;
+  if (!get_local_time(now, &tm_info)) {
     fprintf(stderr, "rootclock: localtime() failed, unable to format time\n");
     exit(1);
   }
-  if (strftime(tbuf, sizeof tbuf, time_fmt_s, tm_info) == 0) {
+  if (strftime(tbuf, sizeof tbuf, time_fmt_s, &tm_info) == 0) {
     /* strftime failed or buffer too small, use fallback */
     snprintf(tbuf, sizeof tbuf, "%s", FALLBACK_TIME);
   }
 
   if (show_date_flag) {
-    if (strftime(dbuf, sizeof dbuf, date_fmt_s, tm_info) == 0) {
+    if (strftime(dbuf, sizeof dbuf, date_fmt_s, &tm_info) == 0) {
       /* strftime failed or buffer too small, use fallback */
       snprintf(dbuf, sizeof dbuf, "%s", FALLBACK_DATE);
     }
@@ -424,25 +434,22 @@ int main(void) {
         time_t boundary_time = ts.tv_sec;
         time_t next_boundary;
 
-        if (refresh_sec >= 3600) {
-          /* Hourly or longer: align to hour boundaries */
-          struct tm tm_boundary_buf;
-          struct tm *tm_boundary_ptr = localtime(&boundary_time);
-          if (tm_boundary_ptr) {
-            tm_boundary_buf = *tm_boundary_ptr; /* Copy to local storage */
+        /* Get boundary time structure once for all alignment calculations */
+        struct tm boundary_tm;
+        if (!get_local_time(boundary_time, &boundary_tm)) {
+          /* Fallback if localtime fails */
+          next_boundary = boundary_time + refresh_sec;
+        } else {
+          if (refresh_sec >= 3600) {
+            /* Hourly or longer: align to hour boundaries */
+            struct tm tm_boundary_buf = boundary_tm; /* Copy the structure */
             tm_boundary_buf.tm_sec = 0;
             tm_boundary_buf.tm_min = 0;
             tm_boundary_buf.tm_hour++;
             next_boundary = mktime(&tm_boundary_buf);
-          } else {
-            next_boundary = boundary_time + refresh_sec;
-          }
-        } else if (refresh_sec >= 60) {
-          /* Minute-level intervals: align to minute boundaries */
-          struct tm tm_minute_buf;
-          struct tm *tm_minute_ptr = localtime(&boundary_time);
-          if (tm_minute_ptr) {
-            tm_minute_buf = *tm_minute_ptr; /* Copy to local storage */
+          } else if (refresh_sec >= 60) {
+            /* Minute-level intervals: align to minute boundaries */
+            struct tm tm_minute_buf = boundary_tm; /* Copy the structure */
             tm_minute_buf.tm_sec = 0;
             /* For refresh_sec like 59, we want next minute boundary */
             /* For refresh_sec like 120, we want appropriate minute alignment */
@@ -452,11 +459,9 @@ int main(void) {
                 ((tm_minute_buf.tm_min / minute_interval) + 1) * minute_interval;
             next_boundary = mktime(&tm_minute_buf);
           } else {
-            next_boundary = boundary_time + refresh_sec;
+            /* Short intervals: align to second boundaries with refresh_sec spacing */
+            next_boundary = ((boundary_time / refresh_sec) + 1) * refresh_sec;
           }
-        } else {
-          /* Short intervals: align to second boundaries with refresh_sec spacing */
-          next_boundary = ((boundary_time / refresh_sec) + 1) * refresh_sec;
         }
 
         time_t wait_time = next_boundary - boundary_time;
