@@ -152,9 +152,13 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   int block_center_y = ry + rh / 2 + block_yoff;
   int base_y = block_center_y - (int)total_h / 2;
 
-  /* Ensure the text placement is within bounds */
-  if (base_y < ry) base_y = ry;
-  if (base_y + (int)time_h > ry + rh) base_y = ry + rh - (int)time_h;
+  /* Ensure the text placement is within bounds, even if region is too small */
+  if (rh < (int)time_h) {
+    base_y = ry;
+  } else {
+    if (base_y < ry) base_y = ry;
+    if (base_y + (int)time_h > ry + rh) base_y = ry + rh - (int)time_h;
+  }
 
   /* Calculate text positioning */  
   int ascent_t = tf->xfont ? tf->xfont->ascent : (int)time_h * 3 / 4;
