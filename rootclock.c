@@ -30,7 +30,7 @@
 
 /* UI constants */
 #define TEXT_BACKGROUND_PADDING 8 /* Padding around text background rectangle */
-#define FALLBACK_ASCENT_RATIO 0.75 /* Ascent ratio when xfont info unavailable */
+#define FALLBACK_FONT_ASCENT_RATIO 0.75 /* Ascent ratio when xfont info unavailable */
 
 /* X11 Atoms for wallpaper handling (picom compatibility) */
 static Atom _XROOTPMAP_ID = None;
@@ -204,7 +204,7 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   }
 
   /* Calculate text positioning */  
-  int ascent_t = tf->xfont ? tf->xfont->ascent : (int)(time_h * FALLBACK_ASCENT_RATIO);
+  int ascent_t = tf->xfont ? tf->xfont->ascent : (int)((time_h * 3) / 4);
   int ty = base_y;
   
   /* Draw a subtle background rectangle behind the text for better contrast */
@@ -248,7 +248,13 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                        Clr *bg_scm, Clr *time_scm, Clr *date_scm,
                        const char *time_fmt_s, const char *date_fmt_s,
                        int block_y_off_s, int line_spacing_s) {
-  char tbuf[TIME_BUF_SIZE], dbuf[DATE_BUF_SIZE];
+  /* Validate critical parameters */
+  if (!drw || !tf || !bg_scm || !time_scm || !time_fmt_s) {
+    fprintf(stderr, "rootclock: invalid parameters for render_all\n");
+    return;
+  }
+  
+  char tbuf[TIME_BUF_SIZE] = {0}, dbuf[DATE_BUF_SIZE] = {0};
   time_t now = time(NULL);
 
   if (now == (time_t)-1) {
@@ -324,8 +330,8 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   nmon = cached_monitor_count;
 
   /* Draw clock on each monitor region */
-  if (xi) {
-    for (int i = 0; i < nmon; i++) {
+  if (xi && nmon > 0) {
+    for (int i = 0; i < nmon && i < MAX_MONITORS; i++) {
       int rx = xi[i].x_org, ry = xi[i].y_org, rw = xi[i].width,
           rh = xi[i].height;
       if (rw <= 0 || rh <= 0 || rw > MAX_SCREEN_DIMENSION ||
@@ -451,8 +457,14 @@ int main(void) {
     }
 
     if (need_redraw) {
+      x11_error_occurred = 0; /* Reset error flag before rendering */
       render_all(drw, tf, df, show_date, bg_scm, time_scm, date_scm, time_fmt,
                  date_fmt, block_y_off, line_spacing);
+      XSync(drw->dpy, False); /* Force synchronization to catch rendering errors */
+      
+      if (x11_error_occurred) {
+        fprintf(stderr, "rootclock: Warning - X11 error during rendering\n");
+      }
       need_redraw = 0;
     }
 
