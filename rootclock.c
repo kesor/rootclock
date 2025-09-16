@@ -42,6 +42,16 @@ static int monitors_dirty = 1; /* force initial query */
 /* Time tracking for consistent updates */
 static time_t last_displayed_time = 0;
 
+/* X11 error handler */
+static int x11_error_handler(Display *dpy, XErrorEvent *e) {
+  char error_text[256];
+  XGetErrorText(dpy, e->error_code, error_text, sizeof(error_text));
+  fprintf(stderr, "rootclock: X11 error: %s (code %d, request %d, minor %d)\n",
+          error_text, e->error_code, e->request_code, e->minor_code);
+  /* Don't exit, just log the error and continue */
+  return 0;
+}
+
 static void signal_handler(int sig) {
   (void)sig;
   running = 0;
@@ -101,7 +111,13 @@ static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
                          XA_PIXMAP, &type, &format, &nitems, &bytes_after,
                          &prop) == Success && prop) {
     if (type == XA_PIXMAP && format == 32 && nitems == 1) {
-      pixmap = *((Pixmap *)prop);
+      Pixmap candidate = *((Pixmap *)prop);
+      /* Verify the pixmap is still valid by checking its geometry */
+      unsigned int w, h, border, depth;
+      Window root_return;
+      if (XGetGeometry(dpy, candidate, &root_return, NULL, NULL, &w, &h, &border, &depth)) {
+        pixmap = candidate; /* Only use if geometry check succeeds */
+      }
     }
     XFree(prop);
   }
@@ -113,7 +129,13 @@ static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
                            XA_PIXMAP, &type, &format, &nitems, &bytes_after,
                            &prop) == Success && prop) {
       if (type == XA_PIXMAP && format == 32 && nitems == 1) {
-        pixmap = *((Pixmap *)prop);
+        Pixmap candidate = *((Pixmap *)prop);
+        /* Verify the pixmap is still valid by checking its geometry */
+        unsigned int w, h, border, depth;
+        Window root_return;
+        if (XGetGeometry(dpy, candidate, &root_return, NULL, NULL, &w, &h, &border, &depth)) {
+          pixmap = candidate; /* Only use if geometry check succeeds */
+        }
       }
       XFree(prop);
     }
@@ -134,8 +156,7 @@ static void set_wallpaper_pixmap(Display *dpy, Window root, Pixmap pixmap) {
   XChangeProperty(dpy, root, ESETROOT_PMAP_ID, XA_PIXMAP, 32,
                   PropModeReplace, (unsigned char *)&pixmap, 1);
 
-  /* Kill the previous pixmap to avoid leaks (following Esetroot convention) */
-  XKillClient(dpy, AllTemporary);
+  /* Note: We don't call XKillClient as it can be too aggressive and cause issues */
 }
 
 /* Draw clock text on region with semi-transparent background for wallpaper visibility */
@@ -248,27 +269,24 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   
   /* Copy wallpaper to our drawing surface if available */
   if (wallpaper_pixmap != None) {
-    /* Copy the wallpaper pixmap as background - handle potential size differences */
+    /* Get wallpaper pixmap dimensions - we already validated it exists */
     unsigned int pixmap_w, pixmap_h, pixmap_border, pixmap_depth;
     Window pixmap_root;
-    if (XGetGeometry(drw->dpy, wallpaper_pixmap, &pixmap_root,
-                     NULL, NULL, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)) {
-      unsigned int copy_w = drw->w < pixmap_w ? drw->w : pixmap_w;
-      unsigned int copy_h = drw->h < pixmap_h ? drw->h : pixmap_h;
-      XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
-                0, 0, copy_w, copy_h, 0, 0);
-      /* If the drawable is larger than the pixmap, fill the rest with background color */
-      if (copy_w < drw->w || copy_h < drw->h) {
-        drw_setscheme(drw, bg_scm);
-        if (copy_w < drw->w)
-          drw_rect(drw, copy_w, 0, drw->w - copy_w, drw->h, 1, 0);
-        if (copy_h < drw->h)
-          drw_rect(drw, 0, copy_h, drw->w, drw->h - copy_h, 1, 0);
-      }
-    } else {
-      /* Failed to get pixmap geometry, fallback to background color */
+    XGetGeometry(drw->dpy, wallpaper_pixmap, &pixmap_root,
+                 NULL, NULL, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth);
+    
+    unsigned int copy_w = drw->w < pixmap_w ? drw->w : pixmap_w;
+    unsigned int copy_h = drw->h < pixmap_h ? drw->h : pixmap_h;
+    XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
+              0, 0, copy_w, copy_h, 0, 0);
+    
+    /* If the drawable is larger than the pixmap, fill the rest with background color */
+    if (copy_w < drw->w || copy_h < drw->h) {
       drw_setscheme(drw, bg_scm);
-      drw_rect(drw, 0, 0, drw->w, drw->h, 1, 0);
+      if (copy_w < drw->w)
+        drw_rect(drw, copy_w, 0, drw->w - copy_w, drw->h, 1, 0);
+      if (copy_h < drw->h)
+        drw_rect(drw, 0, copy_h, drw->w, drw->h - copy_h, 1, 0);
     }
   } else {
     /* No wallpaper found, fill with background color */
@@ -329,6 +347,10 @@ int main(void) {
     fputs("rootclock: cannot open display\n", stderr);
     return 1;
   }
+  
+  /* Install X11 error handler to catch errors instead of crashing */
+  XSetErrorHandler(x11_error_handler);
+  
   int screen = DefaultScreen(dpy);
   Window root = RootWindow(dpy, screen);
 
