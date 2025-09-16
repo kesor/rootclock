@@ -236,7 +236,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     unsigned int pixmap_w, pixmap_h, pixmap_border, pixmap_depth;
     Window pixmap_root;
     if (XGetGeometry(drw->dpy, wallpaper_pixmap, &pixmap_root,
-                     &(int){0}, &(int){0}, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)) {
+                     NULL, NULL, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)) {
       unsigned int copy_w = drw->w < pixmap_w ? drw->w : pixmap_w;
       unsigned int copy_h = drw->h < pixmap_h ? drw->h : pixmap_h;
       XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
