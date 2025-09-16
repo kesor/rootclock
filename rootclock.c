@@ -426,12 +426,14 @@ int main(void) {
 
         if (refresh_sec >= 3600) {
           /* Hourly or longer: align to hour boundaries */
-          struct tm *tm_boundary = localtime(&boundary_time);
-          if (tm_boundary) {
-            tm_boundary->tm_sec = 0;
-            tm_boundary->tm_min = 0;
-            tm_boundary->tm_hour++;
-            next_boundary = mktime(tm_boundary);
+          struct tm tm_boundary_buf;
+          struct tm *tm_boundary_ptr = localtime(&boundary_time);
+          if (tm_boundary_ptr) {
+            tm_boundary_buf = *tm_boundary_ptr; /* Copy to local storage */
+            tm_boundary_buf.tm_sec = 0;
+            tm_boundary_buf.tm_min = 0;
+            tm_boundary_buf.tm_hour++;
+            next_boundary = mktime(&tm_boundary_buf);
           } else {
             next_boundary = boundary_time + refresh_sec;
           }
