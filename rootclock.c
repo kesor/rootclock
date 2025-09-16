@@ -175,8 +175,10 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
     drw_setfontset(drw, df);
     unsigned int dw = drw_fontset_getwidth(drw, dstr);
     int dx = rx + (rw - (int)dw) / 2;
-    bg_x = (dx < bg_x) ? dx - padding : bg_x;
-    bg_w = (dx + (int)dw + padding > bg_x + bg_w) ? dx + (int)dw + padding - bg_x : bg_w;
+    int min_x = (dx - padding < bg_x) ? dx - padding : bg_x;
+    int max_x = ((dx + (int)dw + padding) > (bg_x + bg_w)) ? dx + (int)dw + padding : bg_x + bg_w;
+    bg_x = min_x;
+    bg_w = max_x - min_x;
     bg_h += spacing + date_h + padding;
   }
   
