@@ -216,7 +216,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   /* Update last_displayed_time for consistent tracking */
   last_displayed_time = now;
 
-  struct tm *tm_info = localtime(&now);
+  const struct tm *tm_info = localtime(&now);
   if (!tm_info) {
     fprintf(stderr, "rootclock: localtime() failed, unable to format time\n");
     exit(1);
@@ -421,41 +421,41 @@ int main(void) {
         }
       } else {
         /* For longer intervals, align to time boundaries based on refresh_sec */
-        time_t current_time = ts.tv_sec;
+        time_t boundary_time = ts.tv_sec;
         time_t next_boundary;
 
         if (refresh_sec >= 3600) {
           /* Hourly or longer: align to hour boundaries */
-          struct tm *tm_info = localtime(&current_time);
-          if (tm_info) {
-            tm_info->tm_sec = 0;
-            tm_info->tm_min = 0;
-            tm_info->tm_hour++;
-            next_boundary = mktime(tm_info);
+          struct tm *tm_boundary = localtime(&boundary_time);
+          if (tm_boundary) {
+            tm_boundary->tm_sec = 0;
+            tm_boundary->tm_min = 0;
+            tm_boundary->tm_hour++;
+            next_boundary = mktime(tm_boundary);
           } else {
-            next_boundary = current_time + refresh_sec;
+            next_boundary = boundary_time + refresh_sec;
           }
         } else if (refresh_sec >= 60) {
           /* Minute-level intervals: align to minute boundaries */
-          struct tm *tm_info = localtime(&current_time);
-          if (tm_info) {
-            tm_info->tm_sec = 0;
+          struct tm *tm_minute = localtime(&boundary_time);
+          if (tm_minute) {
+            tm_minute->tm_sec = 0;
             /* For refresh_sec like 59, we want next minute boundary */
             /* For refresh_sec like 120, we want appropriate minute alignment */
             int minute_interval =
                 (refresh_sec + 30) / 60; /* round to nearest minute */
-            tm_info->tm_min =
-                ((tm_info->tm_min / minute_interval) + 1) * minute_interval;
-            next_boundary = mktime(tm_info);
+            tm_minute->tm_min =
+                ((tm_minute->tm_min / minute_interval) + 1) * minute_interval;
+            next_boundary = mktime(tm_minute);
           } else {
-            next_boundary = current_time + refresh_sec;
+            next_boundary = boundary_time + refresh_sec;
           }
         } else {
           /* Short intervals: align to second boundaries with refresh_sec spacing */
-          next_boundary = ((current_time / refresh_sec) + 1) * refresh_sec;
+          next_boundary = ((boundary_time / refresh_sec) + 1) * refresh_sec;
         }
 
-        time_t wait_time = next_boundary - current_time;
+        time_t wait_time = next_boundary - boundary_time;
         if (wait_time <= 0) {
           wait_time = 1; /* minimum wait */
         }
