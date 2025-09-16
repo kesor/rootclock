@@ -216,7 +216,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   /* Update last_displayed_time for consistent tracking */
   last_displayed_time = now;
 
-  const struct tm *tm_info = localtime(&now);
+  struct tm *tm_info = localtime(&now);
   if (!tm_info) {
     fprintf(stderr, "rootclock: localtime() failed, unable to format time\n");
     exit(1);
