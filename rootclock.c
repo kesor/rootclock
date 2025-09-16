@@ -121,7 +121,8 @@ static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
       /* Verify the pixmap is still valid by checking its geometry */
       unsigned int w, h, border, depth;
       Window root_return;
-      if (XGetGeometry(dpy, candidate, &root_return, NULL, NULL, &w, &h, &border, &depth)) {
+      int gx, gy;
+      if (XGetGeometry(dpy, candidate, &root_return, &gx, &gy, &w, &h, &border, &depth)) {
         pixmap = candidate; /* Only use if geometry check succeeds */
       }
     }
@@ -139,7 +140,8 @@ static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
         /* Verify the pixmap is still valid by checking its geometry */
         unsigned int w, h, border, depth;
         Window root_return;
-        if (XGetGeometry(dpy, candidate, &root_return, NULL, NULL, &w, &h, &border, &depth)) {
+        int gx, gy;
+        if (XGetGeometry(dpy, candidate, &root_return, &gx, &gy, &w, &h, &border, &depth)) {
           pixmap = candidate; /* Only use if geometry check succeeds */
         }
       }
@@ -292,8 +294,9 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     Window pixmap_root;
     
     /* Double-check pixmap validity as it might have become invalid */
+    int gx, gy;
     if (XGetGeometry(drw->dpy, wallpaper_pixmap, &pixmap_root,
-                     NULL, NULL, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)) {
+                     &gx, &gy, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)) {
       unsigned int copy_w = drw->w < pixmap_w ? drw->w : pixmap_w;
       unsigned int copy_h = drw->h < pixmap_h ? drw->h : pixmap_h;
       XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
