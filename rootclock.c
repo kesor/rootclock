@@ -3,6 +3,7 @@
 #include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #include <X11/extensions/Xinerama.h>
 #include <errno.h>
 #include <fontconfig/fontconfig.h>
@@ -26,6 +27,10 @@
 #define TIME_BUF_SIZE 64
 #define DATE_BUF_SIZE 128
 #define MIN_UPDATE_INTERVAL_MS 50 /* Minimum 50ms between forced updates */
+
+/* X11 Atoms for wallpaper handling (picom compatibility) */
+static Atom _XROOTPMAP_ID = None;
+static Atom ESETROOT_PMAP_ID = None;
 
 static volatile sig_atomic_t running = 1;
 
@@ -67,7 +72,64 @@ static void update_monitor_cache(Display *dpy) {
   monitors_dirty = 0;
 }
 
-static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
+/* Initialize wallpaper-related X11 atoms */
+static void init_wallpaper_atoms(Display *dpy) {
+  _XROOTPMAP_ID = XInternAtom(dpy, "_XROOTPMAP_ID", False);
+  ESETROOT_PMAP_ID = XInternAtom(dpy, "ESETROOT_PMAP_ID", False);
+}
+
+/* Get existing wallpaper pixmap from root window properties */
+static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
+  Atom type;
+  int format;
+  unsigned long nitems, bytes_after;
+  unsigned char *prop = NULL;
+  Pixmap pixmap = None;
+
+  /* Try _XROOTPMAP_ID first */
+  if (XGetWindowProperty(dpy, root, _XROOTPMAP_ID, 0L, 1L, False,
+                         XA_PIXMAP, &type, &format, &nitems, &bytes_after,
+                         &prop) == Success && prop) {
+    if (type == XA_PIXMAP && format == 32 && nitems == 1) {
+      pixmap = *((Pixmap *)prop);
+    }
+    XFree(prop);
+  }
+
+  /* If that failed, try ESETROOT_PMAP_ID */
+  if (pixmap == None) {
+    prop = NULL;
+    if (XGetWindowProperty(dpy, root, ESETROOT_PMAP_ID, 0L, 1L, False,
+                           XA_PIXMAP, &type, &format, &nitems, &bytes_after,
+                           &prop) == Success && prop) {
+      if (type == XA_PIXMAP && format == 32 && nitems == 1) {
+        pixmap = *((Pixmap *)prop);
+      }
+      XFree(prop);
+    }
+  }
+
+  return pixmap;
+}
+
+/* Set the wallpaper pixmap and update root window properties */
+static void set_wallpaper_pixmap(Display *dpy, Window root, Pixmap pixmap) {
+  /* Set the root window background */
+  XSetWindowBackgroundPixmap(dpy, root, pixmap);
+  XClearWindow(dpy, root);
+
+  /* Update the properties to notify compositors */
+  XChangeProperty(dpy, root, _XROOTPMAP_ID, XA_PIXMAP, 32,
+                  PropModeReplace, (unsigned char *)&pixmap, 1);
+  XChangeProperty(dpy, root, ESETROOT_PMAP_ID, XA_PIXMAP, 32,
+                  PropModeReplace, (unsigned char *)&pixmap, 1);
+
+  /* Kill the previous pixmap to avoid leaks (following Esetroot convention) */
+  XKillClient(dpy, AllTemporary);
+}
+
+/* Draw clock text on region with semi-transparent background for wallpaper visibility */
+static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
                                   Fnt *tf, Fnt *df, int show_date_flag,
                                   Clr *bg_scm, Clr *time_scm, Clr *date_scm,
                                   const char *tstr, const char *dstr,
@@ -77,33 +139,50 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
     return;
   }
 
-  drw_setscheme(drw, bg_scm);
-  drw_rect(drw, rx, ry, rw, rh, 1, 0);
-
-  int time_h = tf->h;
-  if (!tf->xfont) {
-    fprintf(stderr, "rootclock: invalid font configuration\n");
-    return;
-  }
-  int ascent_t = tf->xfont->ascent;
-
-  int date_h = 0;
-  if (show_date_flag && df) {
-    date_h = df->h;
-  }
-
-  int total_h = time_h + (show_date_flag ? (spacing + date_h) : 0);
-  int base_y = ry + (rh - total_h) / 2 + ascent_t + block_yoff;
-
   drw_setfontset(drw, tf);
   unsigned int tw = drw_fontset_getwidth(drw, tstr);
   int tx = rx + (rw - (int)tw) / 2;
 
-  /* drw_text y is the top of the text box; it centers within h.
-     To place baseline at base_y, give box height = time_h and y = base_y -
-     ascent_t */
+  /* Calculate time and date heights */
+  unsigned int time_h = tf->h;
+  unsigned int date_h = (show_date_flag && df) ? df->h : 0;
+  unsigned int total_h = time_h + (show_date_flag ? (spacing + date_h) : 0);
+
+  /* Vertical positioning with block offset */
+  int block_center_y = ry + rh / 2 + block_yoff;
+  int base_y = block_center_y - (int)total_h / 2;
+
+  /* Ensure the text placement is within bounds */
+  if (base_y < ry) base_y = ry;
+  if (base_y + (int)time_h > ry + rh) base_y = ry + rh - (int)time_h;
+
+  /* Calculate text positioning */  
+  int ascent_t = tf->xfont ? tf->xfont->ascent : (int)time_h * 3 / 4;
+  int ty = base_y;
+  
+  /* Draw a subtle background rectangle behind the text for better contrast */
+  int padding = 8;
+  int bg_x = tx - padding;
+  int bg_y = ty - padding;
+  int bg_w = tw + 2 * padding;
+  int bg_h = time_h + 2 * padding;
+  
+  if (show_date_flag && df && dstr && *dstr) {
+    drw_setfontset(drw, df);
+    unsigned int dw = drw_fontset_getwidth(drw, dstr);
+    int dx = rx + (rw - (int)dw) / 2;
+    bg_x = (dx < bg_x) ? dx - padding : bg_x;
+    bg_w = (dx + (int)dw + padding > bg_x + bg_w) ? dx + (int)dw + padding - bg_x : bg_w;
+    bg_h += spacing + date_h + padding;
+  }
+  
+  /* Draw semi-transparent background */
+  drw_setscheme(drw, bg_scm);
+  drw_rect(drw, bg_x, bg_y, bg_w, bg_h, 1, 0);
+  
+  /* Draw time text */
   drw_setscheme(drw, time_scm);
-  drw_text(drw, tx, base_y - ascent_t, tw, time_h, 0, tstr, 0);
+  drw_text(drw, tx, ty, tw, time_h, 0, tstr, 0);
 
   if (show_date_flag && df && dstr && *dstr) {
     drw_setfontset(drw, df);
@@ -114,8 +193,6 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
     drw_setscheme(drw, date_scm);
     drw_text(drw, dx, dy, dw, date_h, 0, dstr, 0);
   }
-
-  drw_map(drw, drw->root, rx, ry, rw, rh);
 }
 
 static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
@@ -150,6 +227,20 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     }
   }
 
+  /* Get the existing wallpaper pixmap to use as background */
+  Pixmap wallpaper_pixmap = get_wallpaper_pixmap(drw->dpy, drw->root);
+  
+  /* Copy wallpaper to our drawing surface if available */
+  if (wallpaper_pixmap != None) {
+    /* Copy the wallpaper pixmap as background */
+    XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
+              0, 0, drw->w, drw->h, 0, 0);
+  } else {
+    /* No wallpaper found, fill with background color */
+    drw_setscheme(drw, bg_scm);
+    drw_rect(drw, 0, 0, drw->w, drw->h, 1, 0);
+  }
+
   XineramaScreenInfo *xi = NULL;
   int nmon = 1;
 
@@ -161,6 +252,7 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   xi = cached_monitors;
   nmon = cached_monitor_count;
 
+  /* Draw clock on each monitor region */
   if (xi) {
     for (int i = 0; i < nmon; i++) {
       int rx = xi[i].x_org, ry = xi[i].y_org, rw = xi[i].width,
@@ -169,18 +261,23 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
           rh > MAX_SCREEN_DIMENSION) {
         continue;
       }
-      draw_block_for_region(drw, rx, ry, rw, rh, tf, df, show_date_flag, bg_scm,
-                            time_scm, date_scm, tbuf,
+      /* Draw clock without background fill since we already have wallpaper */
+      draw_clock_for_region(drw, rx, ry, rw, rh, tf, df, show_date_flag,
+                            bg_scm, time_scm, date_scm, tbuf,
                             show_date_flag ? dbuf : NULL, block_y_off_s,
                             line_spacing_s);
     }
   } else {
     int rw = DisplayWidth(drw->dpy, drw->screen);
     int rh = DisplayHeight(drw->dpy, drw->screen);
-    draw_block_for_region(
-        drw, 0, 0, rw, rh, tf, df, show_date_flag, bg_scm, time_scm, date_scm,
-        tbuf, show_date_flag ? dbuf : NULL, block_y_off_s, line_spacing_s);
+    draw_clock_for_region(drw, 0, 0, rw, rh, tf, df, show_date_flag,
+                          bg_scm, time_scm, date_scm, tbuf,
+                          show_date_flag ? dbuf : NULL, block_y_off_s,
+                          line_spacing_s);
   }
+
+  /* Set our rendered pixmap as the new wallpaper */
+  set_wallpaper_pixmap(drw->dpy, drw->root, drw->drawable);
 }
 
 int main(void) {
@@ -214,6 +311,9 @@ int main(void) {
     XCloseDisplay(dpy);
     return 1;
   }
+
+  /* Initialize wallpaper atoms for picom compatibility */
+  init_wallpaper_atoms(dpy);
 
   Fnt *tf = drw_fontset_create(drw, time_fonts, LENGTH(time_fonts));
   Fnt *df = show_date ? drw_fontset_create(drw, date_fonts, LENGTH(date_fonts))
