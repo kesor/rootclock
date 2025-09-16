@@ -233,8 +233,27 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   /* Copy wallpaper to our drawing surface if available */
   if (wallpaper_pixmap != None) {
     /* Copy the wallpaper pixmap as background - handle potential size differences */
-    XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
-              0, 0, drw->w, drw->h, 0, 0);
+    unsigned int pixmap_w, pixmap_h, pixmap_border, pixmap_depth;
+    Window pixmap_root;
+    if (XGetGeometry(drw->dpy, wallpaper_pixmap, &pixmap_root,
+                     &(int){0}, &(int){0}, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)) {
+      unsigned int copy_w = drw->w < pixmap_w ? drw->w : pixmap_w;
+      unsigned int copy_h = drw->h < pixmap_h ? drw->h : pixmap_h;
+      XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
+                0, 0, copy_w, copy_h, 0, 0);
+      /* If the drawable is larger than the pixmap, fill the rest with background color */
+      if (copy_w < drw->w || copy_h < drw->h) {
+        drw_setscheme(drw, bg_scm);
+        if (copy_w < drw->w)
+          drw_rect(drw, copy_w, 0, drw->w - copy_w, drw->h, 1, 0);
+        if (copy_h < drw->h)
+          drw_rect(drw, 0, copy_h, drw->w, drw->h - copy_h, 1, 0);
+      }
+    } else {
+      /* Failed to get pixmap geometry, fallback to background color */
+      drw_setscheme(drw, bg_scm);
+      drw_rect(drw, 0, 0, drw->w, drw->h, 1, 0);
+    }
   } else {
     /* No wallpaper found, fill with background color */
     drw_setscheme(drw, bg_scm);
