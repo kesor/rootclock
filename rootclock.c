@@ -216,7 +216,8 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   drw_setscheme(drw, bg_scm);
   drw_rect(drw, bg_x, bg_y, bg_w, bg_h, 1, 0);
   
-  /* Draw time text */
+  /* Draw time text - ensure we're using the time font */
+  drw_setfontset(drw, tf);
   drw_setscheme(drw, time_scm);
   drw_text(drw, tx, ty, tw, time_h, 0, tstr, 0);
 
