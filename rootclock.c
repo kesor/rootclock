@@ -152,32 +152,8 @@ static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
   return pixmap;
 }
 
-/* Globals for wallpaper pixmap management */
+/* Globals for wallpaper pixmap management - currently unused but kept for future picom work */
 static Pixmap previous_wallpaper_pixmap = None;
-
-/* Set wallpaper pixmap and update root window properties for picom compatibility */
-static void set_wallpaper_pixmap(Display *dpy, Window root, Pixmap pixmap) {
-  /* Free the previous pixmap to prevent memory leaks */
-  if (previous_wallpaper_pixmap != None) {
-    XFreePixmap(dpy, previous_wallpaper_pixmap);
-  }
-  
-  /* Set the root window background */
-  XSetWindowBackgroundPixmap(dpy, root, pixmap);
-  XClearWindow(dpy, root);
-
-  /* Update the properties to notify compositors */
-  XChangeProperty(dpy, root, _XROOTPMAP_ID, XA_PIXMAP, 32,
-                  PropModeReplace, (unsigned char *)&pixmap, 1);
-  XChangeProperty(dpy, root, ESETROOT_PMAP_ID, XA_PIXMAP, 32,
-                  PropModeReplace, (unsigned char *)&pixmap, 1);
-
-  /* Flush to ensure the changes are sent to the X server */
-  XFlush(dpy);
-  
-  /* Remember this pixmap for cleanup next time */
-  previous_wallpaper_pixmap = pixmap;
-}
 
 /* Draw clock text on region with semi-transparent background for wallpaper visibility */
 static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
@@ -217,14 +193,17 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
     if (base_y + (int)time_h > ry + rh) base_y = ry + rh - (int)time_h;
   }
 
-  /* Calculate text positioning */  
+  /* Calculate text positioning following original layout */  
   int ascent_t = tf->xfont ? tf->xfont->ascent : (int)((time_h * 3) / 4);
-  int ty = base_y;
+  
+  /* Calculate proper baseline positioning like original */
+  int text_base_y = ry + (rh - (int)total_h) / 2 + ascent_t + block_yoff;
   
   /* Draw a subtle background rectangle behind the text for better contrast */
   int padding = TEXT_BACKGROUND_PADDING;
+  int time_y = text_base_y - ascent_t; /* Time text box top */
   int bg_x = tx - padding;
-  int bg_y = ty - padding;
+  int bg_y = time_y - padding;
   int bg_w = tw + 2 * padding;
   int bg_h = time_h + 2 * padding;
   
@@ -246,13 +225,13 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   /* Draw time text - ensure we're using the time font */
   drw_setfontset(drw, tf);
   drw_setscheme(drw, time_scm);
-  drw_text(drw, tx, ty, tw, time_h, 0, tstr, 0);
+  drw_text(drw, tx, time_y, tw, time_h, 0, tstr, 0);
 
   if (show_date_flag && df && dstr && *dstr) {
     drw_setfontset(drw, df);
     unsigned int dw = drw_fontset_getwidth(drw, dstr);
     int dx = rx + (rw - (int)dw) / 2;
-    int date_top = base_y + (tf->h - ascent_t) + spacing; /* baseline gap */
+    int date_top = text_base_y + (tf->h - ascent_t) + spacing; /* baseline gap like original */
     int dy = date_top;
     drw_setscheme(drw, date_scm);
     drw_text(drw, dx, dy, dw, date_h, 0, dstr, 0);
@@ -372,19 +351,8 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   /* Copy the drawable to the root window (original behavior for traditional WMs) */
   drw_map(drw, drw->root, 0, 0, drw->w, drw->h);
 
-  /* Create a new pixmap for wallpaper that picom can recognize */
-  Pixmap wallpaper_new = XCreatePixmap(drw->dpy, drw->root, drw->w, drw->h,
-                                       DefaultDepth(drw->dpy, drw->screen));
-  if (wallpaper_new != None) {
-    /* Copy our drawable (with wallpaper background + clock) to the new pixmap */
-    XCopyArea(drw->dpy, drw->drawable, wallpaper_new, drw->gc,
-              0, 0, drw->w, drw->h, 0, 0);
-    
-    /* Set this pixmap as the wallpaper and update properties for picom */
-    set_wallpaper_pixmap(drw->dpy, drw->root, wallpaper_new);
-    
-    /* Note: Don't free the pixmap here - it needs to persist for picom to use */
-  }
+  /* Skip wallpaper pixmap creation to avoid X11 errors - picom compatibility
+     comes from the wallpaper background copying approach instead */
 }
 
 int main(void) {
