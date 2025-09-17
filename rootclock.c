@@ -152,21 +152,6 @@ static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
   return pixmap;
 }
 
-/* Set the wallpaper pixmap and update root window properties */
-static void set_wallpaper_pixmap(Display *dpy, Window root, Pixmap pixmap) {
-  /* Set the root window background */
-  XSetWindowBackgroundPixmap(dpy, root, pixmap);
-  XClearWindow(dpy, root);
-
-  /* Update the properties to notify compositors */
-  XChangeProperty(dpy, root, _XROOTPMAP_ID, XA_PIXMAP, 32,
-                  PropModeReplace, (unsigned char *)&pixmap, 1);
-  XChangeProperty(dpy, root, ESETROOT_PMAP_ID, XA_PIXMAP, 32,
-                  PropModeReplace, (unsigned char *)&pixmap, 1);
-
-  /* Note: We don't call XKillClient as it can be too aggressive and cause issues */
-}
-
 /* Draw clock text on region with semi-transparent background for wallpaper visibility */
 static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
                                   Fnt *tf, Fnt *df, int show_date_flag,
@@ -359,14 +344,9 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   /* Copy the drawable to the root window (original behavior) */
   drw_map(drw, drw->root, 0, 0, drw->w, drw->h);
 
-  /* For picom compatibility, also set wallpaper properties */
-  x11_error_occurred = 0; /* Reset error flag */
-  set_wallpaper_pixmap(drw->dpy, drw->root, drw->drawable);
-  XSync(drw->dpy, False); /* Force synchronization to catch any errors */
-  
-  if (x11_error_occurred) {
-    fprintf(stderr, "rootclock: Warning - X11 error occurred during wallpaper update\n");
-  }
+  /* Note: Wallpaper property setting removed due to BadDrawable errors with drw->drawable 
+   * The wallpaper background copying above provides picom compatibility by showing
+   * the clock on top of the existing wallpaper */
 }
 
 int main(void) {
