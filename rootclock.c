@@ -356,7 +356,10 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                           line_spacing_s);
   }
 
-  /* Set our rendered pixmap as the new wallpaper for picom compatibility */
+  /* Copy the drawable to the root window (original behavior) */
+  drw_map(drw, drw->root, 0, 0, drw->w, drw->h);
+
+  /* For picom compatibility, also set wallpaper properties */
   x11_error_occurred = 0; /* Reset error flag */
   set_wallpaper_pixmap(drw->dpy, drw->root, drw->drawable);
   XSync(drw->dpy, False); /* Force synchronization to catch any errors */
