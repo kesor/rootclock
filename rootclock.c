@@ -152,6 +152,33 @@ static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
   return pixmap;
 }
 
+/* Globals for wallpaper pixmap management */
+static Pixmap previous_wallpaper_pixmap = None;
+
+/* Set wallpaper pixmap and update root window properties for picom compatibility */
+static void set_wallpaper_pixmap(Display *dpy, Window root, Pixmap pixmap) {
+  /* Free the previous pixmap to prevent memory leaks */
+  if (previous_wallpaper_pixmap != None) {
+    XFreePixmap(dpy, previous_wallpaper_pixmap);
+  }
+  
+  /* Set the root window background */
+  XSetWindowBackgroundPixmap(dpy, root, pixmap);
+  XClearWindow(dpy, root);
+
+  /* Update the properties to notify compositors */
+  XChangeProperty(dpy, root, _XROOTPMAP_ID, XA_PIXMAP, 32,
+                  PropModeReplace, (unsigned char *)&pixmap, 1);
+  XChangeProperty(dpy, root, ESETROOT_PMAP_ID, XA_PIXMAP, 32,
+                  PropModeReplace, (unsigned char *)&pixmap, 1);
+
+  /* Flush to ensure the changes are sent to the X server */
+  XFlush(dpy);
+  
+  /* Remember this pixmap for cleanup next time */
+  previous_wallpaper_pixmap = pixmap;
+}
+
 /* Draw clock text on region with semi-transparent background for wallpaper visibility */
 static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
                                   Fnt *tf, Fnt *df, int show_date_flag,
@@ -342,12 +369,22 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                           line_spacing_s);
   }
 
-  /* Copy the drawable to the root window (original behavior) */
+  /* Copy the drawable to the root window (original behavior for traditional WMs) */
   drw_map(drw, drw->root, 0, 0, drw->w, drw->h);
 
-  /* Note: Wallpaper property setting removed due to BadDrawable errors with drw->drawable 
-   * The wallpaper background copying above provides picom compatibility by showing
-   * the clock on top of the existing wallpaper */
+  /* Create a new pixmap for wallpaper that picom can recognize */
+  Pixmap wallpaper_new = XCreatePixmap(drw->dpy, drw->root, drw->w, drw->h,
+                                       DefaultDepth(drw->dpy, drw->screen));
+  if (wallpaper_new != None) {
+    /* Copy our drawable (with wallpaper background + clock) to the new pixmap */
+    XCopyArea(drw->dpy, drw->drawable, wallpaper_new, drw->gc,
+              0, 0, drw->w, drw->h, 0, 0);
+    
+    /* Set this pixmap as the wallpaper and update properties for picom */
+    set_wallpaper_pixmap(drw->dpy, drw->root, wallpaper_new);
+    
+    /* Note: Don't free the pixmap here - it needs to persist for picom to use */
+  }
 }
 
 int main(void) {
@@ -549,6 +586,9 @@ int main(void) {
   free(date_scm);
   if (cached_monitors)
     XFree(cached_monitors);
+  /* Clean up wallpaper pixmap */
+  if (previous_wallpaper_pixmap != None)
+    XFreePixmap(dpy, previous_wallpaper_pixmap);
   if (drw)
     drw_free(drw);
   XCloseDisplay(dpy);
