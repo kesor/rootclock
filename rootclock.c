@@ -181,27 +181,13 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   unsigned int date_h = (show_date_flag && df) ? df->h : 0;
   unsigned int total_h = time_h + (show_date_flag ? (spacing + date_h) : 0);
 
-  /* Vertical positioning with block offset */
-  int block_center_y = ry + rh / 2 + block_yoff;
-  int base_y = block_center_y - (int)total_h / 2;
-
-  /* Ensure the text placement is within bounds, even if region is too small */
-  if (rh < (int)time_h) {
-    base_y = ry;
-  } else {
-    if (base_y < ry) base_y = ry;
-    if (base_y + (int)time_h > ry + rh) base_y = ry + rh - (int)time_h;
-  }
-
-  /* Calculate text positioning following original layout */  
+  /* Text metrics and baseline (match original logic) */
   int ascent_t = tf->xfont ? tf->xfont->ascent : (int)((time_h * 3) / 4);
-  
-  /* Calculate proper baseline positioning like original */
-  int text_base_y = ry + (rh - (int)total_h) / 2 + ascent_t + block_yoff;
+  int base_y = ry + (rh - (int)total_h) / 2 + ascent_t + block_yoff;
   
   /* Draw a subtle background rectangle behind the text for better contrast */
   int padding = TEXT_BACKGROUND_PADDING;
-  int time_y = text_base_y - ascent_t; /* Time text box top */
+  int time_y = base_y - ascent_t; /* time text box top */
   int bg_x = tx - padding;
   int bg_y = time_y - padding;
   int bg_w = tw + 2 * padding;
@@ -231,7 +217,7 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
     drw_setfontset(drw, df);
     unsigned int dw = drw_fontset_getwidth(drw, dstr);
     int dx = rx + (rw - (int)dw) / 2;
-    int date_top = text_base_y + (tf->h - ascent_t) + spacing; /* baseline gap like original */
+    int date_top = base_y + (tf->h - ascent_t) + spacing; /* baseline gap */
     int dy = date_top;
     drw_setscheme(drw, date_scm);
     drw_text(drw, dx, dy, dw, date_h, 0, dstr, 0);
@@ -288,7 +274,9 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     /* Double-check pixmap validity as it might have become invalid */
     int gx, gy;
     if (XGetGeometry(drw->dpy, wallpaper_pixmap, &pixmap_root,
-                     &gx, &gy, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)) {
+                     &gx, &gy, &pixmap_w, &pixmap_h, &pixmap_border, &pixmap_depth)
+        && pixmap_root == drw->root
+        && pixmap_depth == (unsigned int)DefaultDepth(drw->dpy, drw->screen)) {
       unsigned int copy_w = drw->w < pixmap_w ? drw->w : pixmap_w;
       unsigned int copy_h = drw->h < pixmap_h ? drw->h : pixmap_h;
       XCopyArea(drw->dpy, wallpaper_pixmap, drw->drawable, drw->gc,
