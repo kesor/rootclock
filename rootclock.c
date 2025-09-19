@@ -339,8 +339,8 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
   /* Copy the drawable to the root window (original behavior for traditional WMs) */
   drw_map(drw, drw->root, 0, 0, drw->w, drw->h);
 
-  /* Skip wallpaper pixmap creation to avoid X11 errors - picom compatibility
-     comes from the wallpaper background copying approach instead */
+  /* For picom and similar compositors, we do not create or set a root window pixmap.
+     Instead, we rely on copying the background as drawn by the compositor. */
 }
 
 int main(void) {
