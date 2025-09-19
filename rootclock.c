@@ -182,7 +182,7 @@ static void draw_clock_for_region(Drw *drw, int rx, int ry, int rw, int rh,
   unsigned int total_h = time_h + (show_date_flag ? (spacing + date_h) : 0);
 
   /* Text metrics and baseline (match original logic) */
-  int ascent_t = tf->xfont ? tf->xfont->ascent : (int)((time_h * 3) / 4);
+  int ascent_t = tf->xfont ? tf->xfont->ascent : (int)(time_h * FALLBACK_FONT_ASCENT_RATIO);
   int base_y = ry + (rh - (int)total_h) / 2 + ascent_t + block_yoff;
   
   /* Draw a subtle background rectangle behind the text for better contrast */
