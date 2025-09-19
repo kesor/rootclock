@@ -152,7 +152,8 @@ static Pixmap get_wallpaper_pixmap(Display *dpy, Window root) {
   return pixmap;
 }
 
-/* Globals for wallpaper pixmap management - currently unused but kept for future picom work */
+/* Global for wallpaper pixmap management: tracks the previous wallpaper pixmap for cleanup
+   and may be used for future picom-related features. */
 static Pixmap previous_wallpaper_pixmap = None;
 
 /* Draw clock text on region with semi-transparent background for wallpaper visibility */
