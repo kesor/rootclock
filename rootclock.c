@@ -5,6 +5,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xinerama.h>
+#include <X11/extensions/Xrender.h>
 #include <errno.h>
 #include <fontconfig/fontconfig.h>
 #include <locale.h>
@@ -52,6 +53,13 @@ static int utf8decode(const char *s_in, long *u, int *err) {
       /* 11111 */ 0, /* invalid */
   };
   static const unsigned char leading_mask[] = {0x7F, 0x1F, 0x0F, 0x07};
+  /* leading_mask[i] corresponds to the bit mask for a UTF-8 sequence of
+   * (i + 1) bytes:
+   *   leading_mask[0] = 0x7F for 1-byte (ASCII) sequences
+   *   leading_mask[1] = 0x1F for 2-byte sequences
+   *   leading_mask[2] = 0x0F for 3-byte sequences
+   *   leading_mask[3] = 0x07 for 4-byte sequences
+   */
   static const unsigned int overlong[] = {0x0, 0x80, 0x0800, 0x10000};
 
   const unsigned char *s = (const unsigned char *)s_in;
@@ -143,9 +151,33 @@ static Pixmap get_root_pixmap(Display *dpy, Window root) {
   return pixmap;
 }
 
+static int is_blend_mode(int mode) {
+  switch (mode) {
+  case BG_MODE_INVERT:
+  case BG_MODE_MULTIPLY:
+  case BG_MODE_SCREEN:
+  case BG_MODE_OVERLAY:
+  case BG_MODE_DARKEN:
+  case BG_MODE_LIGHTEN:
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+static XRenderColor clr_to_xrender(const Clr *clr) {
+  XRenderColor rc = {0, 0, 0, 0xffff};
+  if (!clr)
+    return rc;
+  rc.red = clr->color.red;
+  rc.green = clr->color.green;
+  rc.blue = clr->color.blue;
+  rc.alpha = clr->color.alpha ? clr->color.alpha : 0xffff;
+  return rc;
+}
+
 static int prepare_background(Drw *drw, Drawable src_drawable, int rx, int ry,
-                              unsigned int rw, unsigned int rh, int bx, int by,
-                              unsigned int bw, unsigned int bh, Clr *bg_scm) {
+                              unsigned int rw, unsigned int rh, Clr *bg_scm) {
   if (!drw || rw == 0 || rh == 0)
     return 1;
 
@@ -155,7 +187,12 @@ static int prepare_background(Drw *drw, Drawable src_drawable, int rx, int ry,
 
   switch (background_mode) {
   case BG_MODE_COPY:
-  case BG_MODE_INVERT: {
+  case BG_MODE_INVERT:
+  case BG_MODE_MULTIPLY:
+  case BG_MODE_SCREEN:
+  case BG_MODE_OVERLAY:
+  case BG_MODE_DARKEN:
+  case BG_MODE_LIGHTEN: {
     if (src_drawable == None) {
       drw_setscheme(drw, bg_scm);
       drw_rect(drw, rx, ry, rw, rh, 1, 0);
@@ -165,50 +202,6 @@ static int prepare_background(Drw *drw, Drawable src_drawable, int rx, int ry,
     used_solid = 0;
     XCopyArea(drw->dpy, src_drawable, drw->drawable, drw->gc, rx, ry, rw, rh,
               rx, ry);
-
-    if (background_mode == BG_MODE_INVERT && invert_xor_mask && bw > 0 &&
-        bh > 0) {
-      int region_right = rx + (int)rw;
-      int region_bottom = ry + (int)rh;
-      int bx0 = bx;
-      int by0 = by;
-      unsigned int bw0 = bw;
-      unsigned int bh0 = bh;
-
-      if (bx0 < rx) {
-        unsigned int diff = (unsigned int)(rx - bx0);
-        if (diff >= bw0)
-          return used_solid;
-        bw0 -= diff;
-        bx0 = rx;
-      }
-      if (by0 < ry) {
-        unsigned int diff = (unsigned int)(ry - by0);
-        if (diff >= bh0)
-          return used_solid;
-        bh0 -= diff;
-        by0 = ry;
-      }
-      if ((int)(bx0 + bw0) > region_right) {
-        if (region_right <= bx0)
-          return used_solid;
-        bw0 = (unsigned int)(region_right - bx0);
-      }
-      if ((int)(by0 + bh0) > region_bottom) {
-        if (region_bottom <= by0)
-          return used_solid;
-        bh0 = (unsigned int)(region_bottom - by0);
-      }
-
-      XGCValues prev;
-      if (XGetGCValues(drw->dpy, drw->gc, GCFunction | GCForeground, &prev)) {
-        XSetFunction(drw->dpy, drw->gc, GXxor);
-        XSetForeground(drw->dpy, drw->gc, invert_xor_mask);
-        XFillRectangle(drw->dpy, drw->drawable, drw->gc, bx0, by0, bw0, bh0);
-        XSetForeground(drw->dpy, drw->gc, prev.foreground);
-        XSetFunction(drw->dpy, drw->gc, prev.function);
-      }
-    }
   } break;
   case BG_MODE_SOLID:
   default:
@@ -320,12 +313,16 @@ static void fontset_xfont_free(Fnt *font) {
   free(font);
 }
 
-static int draw_text_custom(Drw *drw, int x, int y, unsigned int w,
-                            unsigned int h, unsigned int lpad,
-                            const char *text, int invert, int fill_bg) {
-  if (fill_bg)
-    return drw_text(drw, x, y, w, h, lpad, text, invert);
+enum DrawTargetType {
+  DRAW_TARGET_NORMAL,
+  DRAW_TARGET_ALPHA8,
+};
 
+static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual,
+                          Colormap colormap, enum DrawTargetType target_type,
+                          const XftColor *color_override, int x, int y,
+                          unsigned int w, unsigned int h, unsigned int lpad,
+                          const char *text, int invert, int fill_bg) {
   int ty, ellipsis_x = 0;
   unsigned int tmpw, ew, ellipsis_w = 0, ellipsis_len, hash, h0, h1;
   XftDraw *d = NULL;
@@ -345,12 +342,24 @@ static int draw_text_custom(Drw *drw, int x, int y, unsigned int w,
     return 0;
 
   if (!render) {
-    w = invert ? invert : ~invert;
+    /* width-measurement pass: allow optional clamp via invert (dwm API compat) */
+    w = invert ? (unsigned int)invert : ~0U;
   } else {
+    if (fill_bg && target_type == DRAW_TARGET_NORMAL) {
+      XSetForeground(drw->dpy, drw->gc,
+                     drw->scheme[invert ? ColFg : ColBg].pixel);
+      XFillRectangle(drw->dpy, drawable, drw->gc, x, y, w, h);
+    }
     if (w < lpad)
       return x + w;
-    d = XftDrawCreate(drw->dpy, drw->drawable, DefaultVisual(drw->dpy, drw->screen),
-                      DefaultColormap(drw->dpy, drw->screen));
+    switch (target_type) {
+    case DRAW_TARGET_NORMAL:
+      d = XftDrawCreate(drw->dpy, drawable, visual, colormap);
+      break;
+    case DRAW_TARGET_ALPHA8:
+      d = XftDrawCreateAlpha(drw->dpy, drawable, 8);
+      break;
+    }
     x += lpad;
     w -= lpad;
   }
@@ -394,29 +403,37 @@ static int draw_text_custom(Drw *drw, int x, int y, unsigned int w,
         }
       }
 
-      if (overflow || !charexists || nextfont || utf8err)
+      if (overflow || !charexists || nextfont || utf8err) {
+        if (utf8err && utf8charlen > 0)
+          text += utf8charlen; /* skip invalid sequence to avoid stalling */
         break;
-      else
+      } else
         charexists = 0;
     }
 
     if (utf8strlen) {
       if (render) {
         ty = y + (h - usedfont->h) / 2 + usedfont->xfont->ascent;
-        XftDrawStringUtf8(d, &drw->scheme[invert ? ColBg : ColFg],
-                          usedfont->xfont, x, ty, (XftChar8 *)utf8str, utf8strlen);
+        const XftColor *draw_color =
+            color_override ? color_override
+                           : &drw->scheme[invert ? ColBg : ColFg];
+        XftDrawStringUtf8(d, draw_color, usedfont->xfont, x, ty,
+                          (XftChar8 *)utf8str, utf8strlen);
       }
       x += ew;
       w -= ew;
     }
     if (utf8err && (!render || invalid_width < w)) {
       if (render)
-        draw_text_custom(drw, x, y, w, h, 0, invalid, invert, 0);
+        draw_text_core(drw, drawable, visual, colormap, target_type,
+                       color_override, x, y, w, h, 0, invalid, invert, 0);
       x += invalid_width;
       w -= invalid_width;
     }
     if (render && overflow)
-      draw_text_custom(drw, ellipsis_x, y, ellipsis_w, h, 0, "...", invert, 0);
+      draw_text_core(drw, drawable, visual, colormap, target_type,
+                     color_override, ellipsis_x, y, ellipsis_w, h, 0, "...",
+                     invert, 0);
 
     if (!*text || overflow) {
       break;
@@ -471,6 +488,116 @@ no_match:
     XftDrawDestroy(d);
 
   return x + (render ? w : 0);
+}
+
+static int draw_text_custom(Drw *drw, int x, int y, unsigned int w,
+                            unsigned int h, unsigned int lpad,
+                            const char *text, int invert, int fill_bg) {
+  if (fill_bg)
+    return drw_text(drw, x, y, w, h, lpad, text, invert);
+
+  return draw_text_core(
+      drw, drw->drawable, DefaultVisual(drw->dpy, drw->screen),
+      DefaultColormap(drw->dpy, drw->screen), DRAW_TARGET_NORMAL, NULL, x, y, w,
+      h, lpad, text, invert, 0);
+}
+
+static void draw_text_mask(Drw *drw, Pixmap mask, int x, int y, unsigned int w,
+                           unsigned int h, const char *text) {
+  XRenderColor rc = {0xffff, 0xffff, 0xffff, 0xffff};
+  XftColor color;
+  color.color = rc;
+  color.pixel = 1;
+  draw_text_core(drw, mask, NULL, None, DRAW_TARGET_ALPHA8, &color, x, y, w, h,
+                 0, text, 0, 0);
+}
+
+static int apply_effect_for_text(Drw *drw, int mode, int text_x, int text_y,
+                                 unsigned int text_w, unsigned int text_h,
+                                 const char *text, Fnt *font,
+                                 const Clr *fg_clr) {
+  if (!text || !*text || text_w == 0 || text_h == 0 || !drw || !font)
+    return 0;
+
+  Display *dpy = drw->dpy;
+  Pixmap mask = XCreatePixmap(dpy, drw->root, text_w, text_h, 8);
+  if (!mask)
+    return 0;
+
+  GC mask_gc = XCreateGC(dpy, mask, 0, NULL);
+  if (mask_gc) {
+    XSetForeground(dpy, mask_gc, 0);
+    XFillRectangle(dpy, mask, mask_gc, 0, 0, text_w, text_h);
+    XFreeGC(dpy, mask_gc);
+  }
+
+  Fnt *prev_font = drw->fonts;
+  drw_setfontset(drw, font);
+  draw_text_mask(drw, mask, 0, 0, text_w, text_h, text);
+  drw_setfontset(drw, prev_font);
+
+  int success = 0;
+  switch (mode) {
+  case BG_MODE_INVERT:
+  case BG_MODE_MULTIPLY:
+  case BG_MODE_SCREEN:
+  case BG_MODE_OVERLAY:
+  case BG_MODE_DARKEN:
+  case BG_MODE_LIGHTEN: {
+    XRenderPictFormat *dst_fmt =
+        XRenderFindVisualFormat(dpy, DefaultVisual(dpy, drw->screen));
+    XRenderPictFormat *mask_fmt =
+        XRenderFindStandardFormat(dpy, PictStandardA8);
+    if (!dst_fmt || !mask_fmt)
+      break;
+
+    Picture dst =
+        XRenderCreatePicture(dpy, drw->drawable, dst_fmt, 0, NULL);
+    Picture mask_pic = XRenderCreatePicture(dpy, mask, mask_fmt, 0, NULL);
+    Picture src = None;
+
+    XRenderColor rc = clr_to_xrender(fg_clr);
+    src = XRenderCreateSolidFill(dpy, &rc);
+
+    int op = PictOpOver;
+    switch (mode) {
+    case BG_MODE_INVERT:
+      op = PictOpDifference;
+      break;
+    case BG_MODE_MULTIPLY:
+      op = PictOpMultiply;
+      break;
+    case BG_MODE_SCREEN:
+      op = PictOpScreen;
+      break;
+    case BG_MODE_OVERLAY:
+      op = PictOpOverlay;
+      break;
+    case BG_MODE_DARKEN:
+      op = PictOpDarken;
+      break;
+    case BG_MODE_LIGHTEN:
+      op = PictOpLighten;
+      break;
+    default:
+      break;
+    }
+
+    XRenderComposite(dpy, op, src, mask_pic, dst, 0, 0, 0, 0, text_x, text_y,
+                     text_w, text_h);
+
+    if (src != None)
+      XRenderFreePicture(dpy, src);
+    XRenderFreePicture(dpy, mask_pic);
+    XRenderFreePicture(dpy, dst);
+    success = 1;
+  } break;
+  default:
+    break;
+  }
+
+  XFreePixmap(dpy, mask);
+  return success;
 }
 
 static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
@@ -555,7 +682,8 @@ static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
   if (background_mode != BG_MODE_SOLID) {
     if (wallpaper_pm != None) {
       src_drawable = wallpaper_pm;
-    } else if (background_mode == BG_MODE_COPY) {
+    } else if (background_mode == BG_MODE_COPY ||
+               is_blend_mode(background_mode)) {
       src_drawable = drw->root;
     } else if (!warned_no_wallpaper_pixmap) {
       fprintf(stderr,
@@ -566,23 +694,44 @@ static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
   }
 
   int fill_bg = prepare_background(drw, src_drawable, rx, ry, (unsigned int)rw,
-                                   (unsigned int)rh, block_x, block_y, block_w,
-                                   block_h, bg_scm);
+                                   (unsigned int)rh, bg_scm);
 
   drw_setfontset(drw, tf);
   drw_setscheme(drw, time_scm);
   int tx = block_x + ((int)block_w - (int)tw) / 2;
   if (tx < rx)
     tx = rx;
-  draw_text_custom(drw, tx, time_top, tw, time_h, 0, tstr, 0, fill_bg);
 
+  int dx = 0;
   if (has_date) {
-    drw_setfontset(drw, df);
-    drw_setscheme(drw, date_scm);
-    int dx = block_x + ((int)block_w - (int)dw) / 2;
+    dx = block_x + ((int)block_w - (int)dw) / 2;
     if (dx < rx)
       dx = rx;
-    draw_text_custom(drw, dx, date_top, dw, date_h, 0, dstr, 0, fill_bg);
+  }
+
+  int skip_text_draw = 0;
+  if (is_blend_mode(background_mode) && block_w > 0 && block_h > 0) {
+    int time_done = apply_effect_for_text(drw, background_mode, tx, time_top,
+                                          tw, time_h, tstr, tf,
+                                          &time_scm[ColFg]);
+    int date_done = 1;
+    if (has_date) {
+      date_done = apply_effect_for_text(drw, background_mode, dx, date_top, dw,
+                                        date_h, dstr, df, &date_scm[ColFg]);
+    }
+    if (time_done && date_done)
+      skip_text_draw = 1;
+  }
+
+  if (!skip_text_draw) {
+    drw_setscheme(drw, time_scm);
+    draw_text_custom(drw, tx, time_top, tw, time_h, 0, tstr, 0, fill_bg);
+
+    if (has_date) {
+      drw_setfontset(drw, df);
+      drw_setscheme(drw, date_scm);
+      draw_text_custom(drw, dx, date_top, dw, date_h, 0, dstr, 0, fill_bg);
+    }
   }
 
   drw_map(drw, target_win, rx, ry, rw, rh);

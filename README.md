@@ -57,7 +57,17 @@ You can set:
 * **Fonts** for clock and date
 * **Colors** for both lines
 * **Formats** (strftime strings, e.g. `%H:%M`, `%a %d.%m.%Y`)
-* **Background mode** (`BG_MODE_SOLID`, `BG_MODE_COPY`, `BG_MODE_INVERT`) to control whether the wallpaper shows through or is filtered under the text. Copy/invert sample the underlying root pixmap if `_XROOTPMAP_ID` is available; otherwise they gracefully fall back to the solid colour.
+* **Background mode** (`BG_MODE_SOLID`, `BG_MODE_COPY`, `BG_MODE_INVERT`, `BG_MODE_MULTIPLY`, `BG_MODE_SCREEN`, `BG_MODE_OVERLAY`, `BG_MODE_DARKEN`, `BG_MODE_LIGHTEN`) to control how the wallpaper blends with the glyphs. Copy/filters sample the underlying root pixmap if `_XROOTPMAP_ID` is available (falling back to the root window when needed). Invert, multiply, screen, overlay, darken, and lighten all operate only on the glyph shapes so the surrounding wallpaper stays intact and react to the configured time/date colour:
+
+  - `SOLID`: fills the whole monitor rectangle with the configured background colour, then draws text normally.
+  - `COPY`: copies the wallpaper into the glyph block, then draws text on top.
+  - `INVERT`: runs a “difference” blend against the configured text colour; colours near white give a strong invert, darker colours yield a subtle effect.
+  - `MULTIPLY`: darkens the wallpaper under the glyphs using the text colour as the multiplier.
+  - `SCREEN`: lightens the wallpaper under the glyphs using the text colour.
+  - `OVERLAY`: mixes multiply/screen depending on brightness for a punchier contrast, tinted by the text colour.
+  - `DARKEN`: per-channel minimum between wallpaper and text colour.
+  - `LIGHTEN`: per-channel maximum between wallpaper and text colour.
+
 * **Block padding** (`block_padding_x`, `block_padding_y`) to adjust how much wallpaper around the text is sampled for the overlay
 * Whether to show the date line
 

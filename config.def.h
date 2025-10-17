@@ -6,6 +6,11 @@ enum background_mode_cfg {
     BG_MODE_SOLID,
     BG_MODE_COPY,
     BG_MODE_INVERT,
+    BG_MODE_MULTIPLY,
+    BG_MODE_SCREEN,
+    BG_MODE_OVERLAY,
+    BG_MODE_DARKEN,
+    BG_MODE_LIGHTEN,
 };
 static const int background_mode = BG_MODE_SOLID;
 static const int block_padding_x = 48;
