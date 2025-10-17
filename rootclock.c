@@ -1,7 +1,7 @@
 /* rootclock - draw a centered time/date on each monitor's portion of the root window. */
 #define _POSIX_C_SOURCE 200809L
-#include <X11/Xft/Xft.h>
 #include <X11/Xatom.h>
+#include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xinerama.h>
@@ -134,9 +134,8 @@ static Pixmap get_root_pixmap(Display *dpy, Window root) {
   for (int i = 0; i < 2; i++) {
     if (atoms[i] == None)
       continue;
-    if (XGetWindowProperty(dpy, root, atoms[i], 0L, 1L, False, AnyPropertyType,
-                           &type, &format, &nitems, &bytes_after, &data) ==
-            Success &&
+    if (XGetWindowProperty(dpy, root, atoms[i], 0L, 1L, False, AnyPropertyType, &type, &format,
+                           &nitems, &bytes_after, &data) == Success &&
         data) {
       if (type == XA_PIXMAP && format == 32 && nitems == 1) {
         pixmap = *((Pixmap *)data);
@@ -176,8 +175,8 @@ static XRenderColor clr_to_xrender(const Clr *clr) {
   return rc;
 }
 
-static int prepare_background(Drw *drw, Drawable src_drawable, int rx, int ry,
-                              unsigned int rw, unsigned int rh, Clr *bg_scm) {
+static int prepare_background(Drw *drw, Drawable src_drawable, int rx, int ry, unsigned int rw,
+                              unsigned int rh, Clr *bg_scm) {
   if (!drw || rw == 0 || rh == 0)
     return 1;
 
@@ -200,8 +199,7 @@ static int prepare_background(Drw *drw, Drawable src_drawable, int rx, int ry,
     }
 
     used_solid = 0;
-    XCopyArea(drw->dpy, src_drawable, drw->drawable, drw->gc, rx, ry, rw, rh,
-              rx, ry);
+    XCopyArea(drw->dpy, src_drawable, drw->drawable, drw->gc, rx, ry, rw, rh, rx, ry);
   } break;
   case BG_MODE_SOLID:
   default:
@@ -223,20 +221,17 @@ static int compositor_is_active(Display *dpy, int screen) {
   return XGetSelectionOwner(dpy, sel) != None;
 }
 
-static Window create_desktop_window(Display *dpy, int screen, Window root,
-                                    unsigned int w, unsigned int h,
-                                    unsigned long bg_pixel) {
+static Window create_desktop_window(Display *dpy, int screen, Window root, unsigned int w,
+                                    unsigned int h, unsigned long bg_pixel) {
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof swa);
   swa.override_redirect = True;
   swa.background_pixel = bg_pixel;
   swa.event_mask = ExposureMask;
 
-  Window win = XCreateWindow(dpy, root, 0, 0, w, h, 0,
-                             DefaultDepth(dpy, screen), InputOutput,
+  Window win = XCreateWindow(dpy, root, 0, 0, w, h, 0, DefaultDepth(dpy, screen), InputOutput,
                              DefaultVisual(dpy, screen),
-                             CWOverrideRedirect | CWBackPixel | CWEventMask,
-                             &swa);
+                             CWOverrideRedirect | CWBackPixel | CWEventMask, &swa);
   if (!win) {
     return None;
   }
@@ -269,8 +264,7 @@ static void destroy_desktop_window(Display *dpy, Window *win) {
   }
 }
 
-static Fnt *fontset_xfont_create(Drw *drw, const char *fontname,
-                                 FcPattern *fontpattern) {
+static Fnt *fontset_xfont_create(Drw *drw, const char *fontname, FcPattern *fontpattern) {
   Fnt *font;
   XftFont *xfont = NULL;
   FcPattern *pattern = NULL;
@@ -281,8 +275,7 @@ static Fnt *fontset_xfont_create(Drw *drw, const char *fontname,
       return NULL;
     }
     if (!(pattern = FcNameParse((FcChar8 *)fontname))) {
-      fprintf(stderr, "error, cannot parse font name to pattern: '%s'\n",
-              fontname);
+      fprintf(stderr, "error, cannot parse font name to pattern: '%s'\n", fontname);
       XftFontClose(drw->dpy, xfont);
       return NULL;
     }
@@ -318,10 +311,9 @@ enum DrawTargetType {
   DRAW_TARGET_ALPHA8,
 };
 
-static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual,
-                          Colormap colormap, enum DrawTargetType target_type,
-                          const XftColor *color_override, int x, int y,
-                          unsigned int w, unsigned int h, unsigned int lpad,
+static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap colormap,
+                          enum DrawTargetType target_type, const XftColor *color_override, int x,
+                          int y, unsigned int w, unsigned int h, unsigned int lpad,
                           const char *text, int invert, int fill_bg) {
   int ty, ellipsis_x = 0;
   unsigned int tmpw, ew, ellipsis_w = 0, ellipsis_len, hash, h0, h1;
@@ -346,8 +338,7 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual,
     w = invert ? (unsigned int)invert : ~0U;
   } else {
     if (fill_bg && target_type == DRAW_TARGET_NORMAL) {
-      XSetForeground(drw->dpy, drw->gc,
-                     drw->scheme[invert ? ColFg : ColBg].pixel);
+      XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel);
       XFillRectangle(drw->dpy, drawable, drw->gc, x, y, w, h);
     }
     if (w < lpad)
@@ -376,8 +367,7 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual,
     while (*text) {
       utf8charlen = utf8decode(text, &utf8codepoint, &utf8err);
       for (curfont = drw->fonts; curfont; curfont = curfont->next) {
-        charexists =
-            charexists || XftCharExists(drw->dpy, curfont->xfont, utf8codepoint);
+        charexists = charexists || XftCharExists(drw->dpy, curfont->xfont, utf8codepoint);
         if (charexists) {
           drw_font_getexts(curfont, text, utf8charlen, &tmpw, NULL);
           if (ew + ellipsis_width <= w) {
@@ -415,25 +405,22 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual,
       if (render) {
         ty = y + (h - usedfont->h) / 2 + usedfont->xfont->ascent;
         const XftColor *draw_color =
-            color_override ? color_override
-                           : &drw->scheme[invert ? ColBg : ColFg];
-        XftDrawStringUtf8(d, draw_color, usedfont->xfont, x, ty,
-                          (XftChar8 *)utf8str, utf8strlen);
+            color_override ? color_override : &drw->scheme[invert ? ColBg : ColFg];
+        XftDrawStringUtf8(d, draw_color, usedfont->xfont, x, ty, (XftChar8 *)utf8str, utf8strlen);
       }
       x += ew;
       w -= ew;
     }
     if (utf8err && (!render || invalid_width < w)) {
       if (render)
-        draw_text_core(drw, drawable, visual, colormap, target_type,
-                       color_override, x, y, w, h, 0, invalid, invert, 0);
+        draw_text_core(drw, drawable, visual, colormap, target_type, color_override, x, y, w, h, 0,
+                       invalid, invert, 0);
       x += invalid_width;
       w -= invalid_width;
     }
     if (render && overflow)
-      draw_text_core(drw, drawable, visual, colormap, target_type,
-                     color_override, ellipsis_x, y, ellipsis_w, h, 0, "...",
-                     invert, 0);
+      draw_text_core(drw, drawable, visual, colormap, target_type, color_override, ellipsis_x, y,
+                     ellipsis_w, h, 0, "...", invert, 0);
 
     if (!*text || overflow) {
       break;
@@ -478,7 +465,7 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual,
         } else {
           fontset_xfont_free(usedfont);
           nomatches[nomatches[h0] ? h1 : h0] = utf8codepoint;
-no_match:
+        no_match:
           usedfont = drw->fonts;
         }
       }
@@ -490,31 +477,27 @@ no_match:
   return x + (render ? w : 0);
 }
 
-static int draw_text_custom(Drw *drw, int x, int y, unsigned int w,
-                            unsigned int h, unsigned int lpad,
-                            const char *text, int invert, int fill_bg) {
+static int draw_text_custom(Drw *drw, int x, int y, unsigned int w, unsigned int h,
+                            unsigned int lpad, const char *text, int invert, int fill_bg) {
   if (fill_bg)
     return drw_text(drw, x, y, w, h, lpad, text, invert);
 
-  return draw_text_core(
-      drw, drw->drawable, DefaultVisual(drw->dpy, drw->screen),
-      DefaultColormap(drw->dpy, drw->screen), DRAW_TARGET_NORMAL, NULL, x, y, w,
-      h, lpad, text, invert, 0);
+  return draw_text_core(drw, drw->drawable, DefaultVisual(drw->dpy, drw->screen),
+                        DefaultColormap(drw->dpy, drw->screen), DRAW_TARGET_NORMAL, NULL, x, y, w,
+                        h, lpad, text, invert, 0);
 }
 
-static void draw_text_mask(Drw *drw, Pixmap mask, int x, int y, unsigned int w,
-                           unsigned int h, const char *text) {
+static void draw_text_mask(Drw *drw, Pixmap mask, int x, int y, unsigned int w, unsigned int h,
+                           const char *text) {
   XRenderColor rc = {0xffff, 0xffff, 0xffff, 0xffff};
   XftColor color;
   color.color = rc;
   color.pixel = 1;
-  draw_text_core(drw, mask, NULL, None, DRAW_TARGET_ALPHA8, &color, x, y, w, h,
-                 0, text, 0, 0);
+  draw_text_core(drw, mask, NULL, None, DRAW_TARGET_ALPHA8, &color, x, y, w, h, 0, text, 0, 0);
 }
 
-static int apply_effect_for_text(Drw *drw, int mode, int text_x, int text_y,
-                                 unsigned int text_w, unsigned int text_h,
-                                 const char *text, Fnt *font,
+static int apply_effect_for_text(Drw *drw, int mode, int text_x, int text_y, unsigned int text_w,
+                                 unsigned int text_h, const char *text, Fnt *font,
                                  const Clr *fg_clr) {
   if (!text || !*text || text_w == 0 || text_h == 0 || !drw || !font)
     return 0;
@@ -544,15 +527,12 @@ static int apply_effect_for_text(Drw *drw, int mode, int text_x, int text_y,
   case BG_MODE_OVERLAY:
   case BG_MODE_DARKEN:
   case BG_MODE_LIGHTEN: {
-    XRenderPictFormat *dst_fmt =
-        XRenderFindVisualFormat(dpy, DefaultVisual(dpy, drw->screen));
-    XRenderPictFormat *mask_fmt =
-        XRenderFindStandardFormat(dpy, PictStandardA8);
+    XRenderPictFormat *dst_fmt = XRenderFindVisualFormat(dpy, DefaultVisual(dpy, drw->screen));
+    XRenderPictFormat *mask_fmt = XRenderFindStandardFormat(dpy, PictStandardA8);
     if (!dst_fmt || !mask_fmt)
       break;
 
-    Picture dst =
-        XRenderCreatePicture(dpy, drw->drawable, dst_fmt, 0, NULL);
+    Picture dst = XRenderCreatePicture(dpy, drw->drawable, dst_fmt, 0, NULL);
     Picture mask_pic = XRenderCreatePicture(dpy, mask, mask_fmt, 0, NULL);
     Picture src = None;
 
@@ -583,8 +563,7 @@ static int apply_effect_for_text(Drw *drw, int mode, int text_x, int text_y,
       break;
     }
 
-    XRenderComposite(dpy, op, src, mask_pic, dst, 0, 0, 0, 0, text_x, text_y,
-                     text_w, text_h);
+    XRenderComposite(dpy, op, src, mask_pic, dst, 0, 0, 0, 0, text_x, text_y, text_w, text_h);
 
     if (src != None)
       XRenderFreePicture(dpy, src);
@@ -600,13 +579,10 @@ static int apply_effect_for_text(Drw *drw, int mode, int text_x, int text_y,
   return success;
 }
 
-static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
-                                  int rw, int rh, Fnt *tf, Fnt *df,
-                                  int show_date_flag, Clr *bg_scm,
-                                  Clr *time_scm, Clr *date_scm,
-                                  const char *tstr, const char *dstr,
-                                  int block_yoff, int spacing,
-                                  Pixmap wallpaper_pm) {
+static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry, int rw, int rh,
+                                  Fnt *tf, Fnt *df, int show_date_flag, Clr *bg_scm, Clr *time_scm,
+                                  Clr *date_scm, const char *tstr, const char *dstr, int block_yoff,
+                                  int spacing, Pixmap wallpaper_pm) {
   if (show_date_flag && (!df || !date_scm || !dstr)) {
     fprintf(stderr, "rootclock: invalid parameters for date display\n");
     return;
@@ -674,27 +650,23 @@ static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
   if (bottom_with_padding > region_bottom)
     bottom_with_padding = region_bottom;
   unsigned int block_h =
-      bottom_with_padding > block_y
-          ? (unsigned int)(bottom_with_padding - block_y)
-          : 0;
+      bottom_with_padding > block_y ? (unsigned int)(bottom_with_padding - block_y) : 0;
 
   Drawable src_drawable = 0;
   if (background_mode != BG_MODE_SOLID) {
     if (wallpaper_pm != None) {
       src_drawable = wallpaper_pm;
-    } else if (background_mode == BG_MODE_COPY ||
-               is_blend_mode(background_mode)) {
+    } else if (background_mode == BG_MODE_COPY || is_blend_mode(background_mode)) {
       src_drawable = drw->root;
     } else if (!warned_no_wallpaper_pixmap) {
-      fprintf(stderr,
-              "rootclock: wallpaper pixmap not available; falling back to "
-              "solid background\n");
+      fprintf(stderr, "rootclock: wallpaper pixmap not available; falling back to "
+                      "solid background\n");
       warned_no_wallpaper_pixmap = 1;
     }
   }
 
-  int fill_bg = prepare_background(drw, src_drawable, rx, ry, (unsigned int)rw,
-                                   (unsigned int)rh, bg_scm);
+  int fill_bg =
+      prepare_background(drw, src_drawable, rx, ry, (unsigned int)rw, (unsigned int)rh, bg_scm);
 
   drw_setfontset(drw, tf);
   drw_setscheme(drw, time_scm);
@@ -711,13 +683,12 @@ static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
 
   int skip_text_draw = 0;
   if (is_blend_mode(background_mode) && block_w > 0 && block_h > 0) {
-    int time_done = apply_effect_for_text(drw, background_mode, tx, time_top,
-                                          tw, time_h, tstr, tf,
+    int time_done = apply_effect_for_text(drw, background_mode, tx, time_top, tw, time_h, tstr, tf,
                                           &time_scm[ColFg]);
     int date_done = 1;
     if (has_date) {
-      date_done = apply_effect_for_text(drw, background_mode, dx, date_top, dw,
-                                        date_h, dstr, df, &date_scm[ColFg]);
+      date_done = apply_effect_for_text(drw, background_mode, dx, date_top, dw, date_h, dstr, df,
+                                        &date_scm[ColFg]);
     }
     if (time_done && date_done)
       skip_text_draw = 1;
@@ -737,11 +708,9 @@ static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
   drw_map(drw, target_win, rx, ry, rw, rh);
 }
 
-static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
-                       Clr *bg_scm, Clr *time_scm, Clr *date_scm,
-                       const char *time_fmt_s, const char *date_fmt_s,
-                       int block_y_off_s, int line_spacing_s,
-                       Window target_win) {
+static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag, Clr *bg_scm, Clr *time_scm,
+                       Clr *date_scm, const char *time_fmt_s, const char *date_fmt_s,
+                       int block_y_off_s, int line_spacing_s, Window target_win) {
   char tbuf[TIME_BUF_SIZE], dbuf[DATE_BUF_SIZE];
   time_t now = time(NULL);
 
@@ -784,25 +753,20 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
 
   if (xi) {
     for (int i = 0; i < nmon; i++) {
-      int rx = xi[i].x_org, ry = xi[i].y_org, rw = xi[i].width,
-          rh = xi[i].height;
-      if (rw <= 0 || rh <= 0 || rw > MAX_SCREEN_DIMENSION ||
-          rh > MAX_SCREEN_DIMENSION) {
+      int rx = xi[i].x_org, ry = xi[i].y_org, rw = xi[i].width, rh = xi[i].height;
+      if (rw <= 0 || rh <= 0 || rw > MAX_SCREEN_DIMENSION || rh > MAX_SCREEN_DIMENSION) {
         continue;
       }
-      draw_block_for_region(drw, target_win, rx, ry, rw, rh, tf, df,
-                            show_date_flag, bg_scm, time_scm, date_scm, tbuf,
-                            show_date_flag ? dbuf : NULL, block_y_off_s,
+      draw_block_for_region(drw, target_win, rx, ry, rw, rh, tf, df, show_date_flag, bg_scm,
+                            time_scm, date_scm, tbuf, show_date_flag ? dbuf : NULL, block_y_off_s,
                             line_spacing_s, wallpaper_pm);
     }
   } else {
     int rw = DisplayWidth(drw->dpy, drw->screen);
     int rh = DisplayHeight(drw->dpy, drw->screen);
-    draw_block_for_region(
-        drw, target_win, 0, 0, rw, rh, tf, df, show_date_flag, bg_scm,
-        time_scm, date_scm,
-        tbuf, show_date_flag ? dbuf : NULL, block_y_off_s, line_spacing_s,
-        wallpaper_pm);
+    draw_block_for_region(drw, target_win, 0, 0, rw, rh, tf, df, show_date_flag, bg_scm, time_scm,
+                          date_scm, tbuf, show_date_flag ? dbuf : NULL, block_y_off_s,
+                          line_spacing_s, wallpaper_pm);
   }
 }
 
@@ -828,16 +792,15 @@ int main(void) {
 
   XWindowAttributes root_attr;
   if (XGetWindowAttributes(dpy, root, &root_attr) && root_attr.visual) {
-    invert_xor_mask = root_attr.visual->red_mask | root_attr.visual->green_mask |
-                      root_attr.visual->blue_mask;
+    invert_xor_mask =
+        root_attr.visual->red_mask | root_attr.visual->green_mask | root_attr.visual->blue_mask;
   } else {
     invert_xor_mask = 0x00ffffff;
   }
 
   unsigned int rw = DisplayWidth(dpy, screen);
   unsigned int rh = DisplayHeight(dpy, screen);
-  if (rw == 0 || rh == 0 || rw > MAX_SCREEN_DIMENSION ||
-      rh > MAX_SCREEN_DIMENSION) {
+  if (rw == 0 || rh == 0 || rw > MAX_SCREEN_DIMENSION || rh > MAX_SCREEN_DIMENSION) {
     fprintf(stderr, "rootclock: invalid display dimensions %ux%u\n", rw, rh);
     XCloseDisplay(dpy);
     return 1;
@@ -850,8 +813,7 @@ int main(void) {
   }
 
   Fnt *tf = drw_fontset_create(drw, time_fonts, LENGTH(time_fonts));
-  Fnt *df = show_date ? drw_fontset_create(drw, date_fonts, LENGTH(date_fonts))
-                      : NULL;
+  Fnt *df = show_date ? drw_fontset_create(drw, date_fonts, LENGTH(date_fonts)) : NULL;
   if (!tf || (show_date && !df))
     die("rootclock: failed to load fonts");
 
@@ -879,9 +841,8 @@ int main(void) {
       XSelectInput(dpy, desktop_win, ExposureMask);
     } else {
       compositor_active = 0;
-      fprintf(stderr,
-              "rootclock: compositor detected but failed to create "
-              "background window, falling back to root drawing\n");
+      fprintf(stderr, "rootclock: compositor detected but failed to create "
+                      "background window, falling back to root drawing\n");
     }
   }
 
@@ -940,8 +901,8 @@ int main(void) {
     }
 
     if (need_redraw) {
-      render_all(drw, tf, df, show_date, bg_scm, time_scm, date_scm, time_fmt,
-                 date_fmt, block_y_off, line_spacing, draw_win);
+      render_all(drw, tf, df, show_date, bg_scm, time_scm, date_scm, time_fmt, date_fmt,
+                 block_y_off, line_spacing, draw_win);
       need_redraw = 0;
     }
 
@@ -987,10 +948,8 @@ int main(void) {
             tm_info->tm_sec = 0;
             /* For refresh_sec like 59, we want next minute boundary */
             /* For refresh_sec like 120, we want appropriate minute alignment */
-            int minute_interval =
-                (refresh_sec + 30) / 60; /* round to nearest minute */
-            tm_info->tm_min =
-                ((tm_info->tm_min / minute_interval) + 1) * minute_interval;
+            int minute_interval = (refresh_sec + 30) / 60; /* round to nearest minute */
+            tm_info->tm_min = ((tm_info->tm_min / minute_interval) + 1) * minute_interval;
             next_boundary = mktime(tm_info);
           } else {
             next_boundary = current_time + refresh_sec;

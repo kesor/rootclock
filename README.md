@@ -73,6 +73,19 @@ You can set:
 
 See the file for details.
 
+## Development
+
+If you work inside the provided `nix develop` shell you will have `clang-format`
+available. A pre-commit hook is shipped under `.githooks/pre-commit` that
+formats `rootclock.c` and `config.def.h` automatically. To enable it, point git
+to the repository hooks directory once:
+
+```
+git config core.hooksPath .githooks
+```
+
+Subsequent `git commit` runs will format and stage the files for you.
+
 ## License
 
 MIT/X Consortium License
