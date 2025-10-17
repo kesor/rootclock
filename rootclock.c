@@ -68,6 +68,10 @@ static int utf8decode(const char *s_in, long *u, int *err) {
   *err = 1;
   if (len == 0)
     return 1;
+  /* len is derived from the lookup table above; guard again to keep the
+   * leading_mask index safe even if the table is refactored. */
+  if (len < 0)
+    return 1;
 
   long cp = s[0] & leading_mask[len - 1];
   for (int i = 1; i < len; ++i) {
@@ -329,6 +333,9 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
   FcPattern *match;
   XftResult result;
   int charexists = 0, overflow = 0;
+  /* Cache of codepoints known to be missing across the font chain.
+   * 128 entries chosen as a small, cache-friendly size that balances hit rate
+   * with minimal memory usage. Collision policy is simple overwrite. */
   static unsigned int nomatches[128], ellipsis_width, invalid_width;
   static const char invalid[] = "\xEF\xBF\xBD";
 
@@ -358,6 +365,8 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
   }
 
   usedfont = drw->fonts;
+  /* Lazy-initialised metrics; this routine mirrors dwm and is intended for
+   * single-threaded use. */
   if (!ellipsis_width && render)
     ellipsis_width = drw_fontset_getwidth(drw, "...");
   if (!invalid_width && render)
@@ -436,8 +445,10 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
       hash = (unsigned int)utf8codepoint;
       hash = ((hash >> 16) ^ hash) * 0x21F0AAAD;
       hash = ((hash >> 15) ^ hash) * 0xD35A2D97;
-      /* Numbers from the MurmurHash3 finalizer to mix bits before indexing
-       * the small nomatches cache. */
+      /* Numbers from the MurmurHash3 finalizer to mix bits before indexing the
+       * small nomatches cache. MurmurHash3's finalizer is a compact way to
+       * decorrelate input bits and helps avoid clustering in this tiny table.
+       * See Austin Appleby's smhasher project. */
       h0 = ((hash >> 15) ^ hash) % LENGTH(nomatches);
       h1 = (hash >> 17) % LENGTH(nomatches);
       if (nomatches[h0] == utf8codepoint || nomatches[h1] == utf8codepoint)
@@ -509,6 +520,9 @@ static int apply_effect_for_text(Drw *drw, int mode, int text_x, int text_y, uns
     return 0;
 
   Display *dpy = drw->dpy;
+  /* Blend paths allocate a fresh coverage mask per draw. These regions are
+   * large but infrequent compared to the overall render time; if profiling ever
+   * shows this as a bottleneck we can pool pixmaps keyed by dimensions. */
   Pixmap mask = XCreatePixmap(dpy, drw->root, text_w, text_h, 8);
   if (!mask)
     return 0;
