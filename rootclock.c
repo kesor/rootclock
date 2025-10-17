@@ -21,6 +21,8 @@
 #include "util.h"
 
 #define UTF_INVALID 0xFFFD
+#define MURMUR3_C1 0x21F0AAADu
+#define MURMUR3_C2 0xD35A2D97u
 
 /* Constants for validation limits */
 #define MAX_MONITORS 64
