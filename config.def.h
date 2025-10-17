@@ -8,6 +8,8 @@ enum background_mode_cfg {
     BG_MODE_INVERT,
 };
 static const int background_mode = BG_MODE_SOLID;
+static const int block_padding_x = 48;
+static const int block_padding_y = 24;
 
 /* Time (1st line) */
 static const char *time_fonts[] = {

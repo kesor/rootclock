@@ -57,7 +57,8 @@ You can set:
 * **Fonts** for clock and date
 * **Colors** for both lines
 * **Formats** (strftime strings, e.g. `%H:%M`, `%a %d.%m.%Y`)
-* **Background mode** (`BG_MODE_SOLID`, `BG_MODE_COPY`, `BG_MODE_INVERT`) to control whether the wallpaper shows through or is filtered under the text
+* **Background mode** (`BG_MODE_SOLID`, `BG_MODE_COPY`, `BG_MODE_INVERT`) to control whether the wallpaper shows through or is filtered under the text. Copy/invert sample the underlying root pixmap if `_XROOTPMAP_ID` is available; otherwise they gracefully fall back to the solid colour.
+* **Block padding** (`block_padding_x`, `block_padding_y`) to adjust how much wallpaper around the text is sampled for the overlay
 * Whether to show the date line
 
 See the file for details.
