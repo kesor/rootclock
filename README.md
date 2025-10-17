@@ -86,6 +86,11 @@ git config core.hooksPath .githooks
 
 Subsequent `git commit` runs will format and stage the files for you.
 
+## Further Reading
+
+- `docs/integration.md` – how to integrate rootclock via the Nix module or a
+  manual/user-level `systemd` service, plus troubleshooting tips.
+
 ## License
 
 MIT/X Consortium License
