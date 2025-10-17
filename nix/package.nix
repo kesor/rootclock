@@ -1,13 +1,14 @@
-{ stdenv
-, lib
-, pkg-config
-, fontconfig
-, freetype
-, libX11
-, libXft
-, libXinerama
-, libXrender
-, conf ? null
+{
+  lib,
+  stdenv,
+  pkg-config,
+  fontconfig,
+  freetype,
+  libX11,
+  libXft,
+  libXinerama,
+  libXrender,
+  conf ? null,
 }:
 
 stdenv.mkDerivation rec {
@@ -20,7 +21,14 @@ stdenv.mkDerivation rec {
   enableParallelBuilding = true;
 
   nativeBuildInputs = [ pkg-config ];
-  buildInputs = [ fontconfig freetype libX11 libXft libXinerama libXrender ];
+  buildInputs = [
+    fontconfig
+    freetype
+    libX11
+    libXft
+    libXinerama
+    libXrender
+  ];
 
   postPatch = lib.optionalString (conf != null) ''
     cp ${conf} config.def.h
@@ -43,6 +51,6 @@ stdenv.mkDerivation rec {
     homepage = "https://github.com/kesor/rootclock";
     license = licenses.mit;
     platforms = platforms.unix;
-    maintainers = [ ];
+    maintainers = with maintainers; [ evgeny ];
   };
 }

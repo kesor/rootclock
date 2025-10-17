@@ -8,8 +8,7 @@
 let
   cfg = config.programs.rootclock;
 
-  packageArgs =
-    if cfg.configFile != null then { conf = cfg.configFile; } else { };
+  packageArgs = if cfg.configFile != null then { conf = cfg.configFile; } else { };
 
   defaultPkg = pkgs.callPackage ./package.nix packageArgs;
 

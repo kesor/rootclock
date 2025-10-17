@@ -40,7 +40,9 @@
           '';
         };
       }
-    ) // {
-      homeManagerModules.rootclock = rootclockModule;
+    )
+    // {
+      nixosModules.rootclock = import ./nix/default.nix;
+      homeManagerModules.rootclock = import ./nix/default.nix;
     };
 }
