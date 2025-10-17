@@ -45,6 +45,10 @@ rootclock &
 
 It will run in the background and continuously update the clock.
 
+## Compositors
+
+rootclock automatically detects EWMH compositing managers such as picom. When a compositor is active it draws to an unmanaged `_NET_WM_WINDOW_TYPE_DESKTOP` layer instead of the real root window, so the clock remains visible even when the compositor's overlay is in use. No extra configuration is required; if the compositor exits, rootclock falls back to painting on the root window.
+
 ## Configuration
 
 All configuration is done by editing `config.def.h` and recompiling.
