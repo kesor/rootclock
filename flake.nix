@@ -33,6 +33,7 @@
             pkgs.gcc
             pkgs.gnumake
             pkgs.pkg-config
+            pkgs.clang-tools
           ];
           buildInputs = [
             pkgs.fontconfig
@@ -43,7 +44,7 @@
             pkgs.xorg.libXrender
           ];
           shellHook = ''
-            echo "rootclock dev shell: run 'make' to build, 'make clean' to clean."
+            echo "rootclock dev shell: run 'make' to build, 'make clean' to clean, 'clang-format -i rootclock.c' to format."
           '';
         };
       }
