@@ -1,10 +1,24 @@
 /* Appearance */
 static const char *bg_color = "#000000";
 
+/* Background handling */
+enum background_mode_cfg {
+  BG_MODE_SOLID,
+  BG_MODE_COPY,
+  BG_MODE_INVERT,
+  BG_MODE_MULTIPLY,
+  BG_MODE_SCREEN,
+  BG_MODE_OVERLAY,
+  BG_MODE_DARKEN,
+  BG_MODE_LIGHTEN,
+};
+static const int background_mode = BG_MODE_SOLID;
+static const int block_padding_x = 48;
+static const int block_padding_y = 24;
+
 /* Time (1st line) */
 static const char *time_fonts[] = {
-    "Inter:style=ExtraBold:size=120",
-    "Liberation Sans:style=Bold:size=120",
+    "Inter:style=ExtraBold:size=120", "Liberation Sans:style=Bold:size=120",
     "Noto Sans Math:style=Regular:size=120", /* fallback for ratio symbol */
 };
 static const char *time_color = "#ffffff";

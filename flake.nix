@@ -15,11 +15,12 @@
       in
       {
         packages.default = pkgs.callPackage ./default.nix {
+          fontconfig = pkgs.fontconfig;
+          freetype = pkgs.freetype;
           libX11 = pkgs.xorg.libX11;
           libXft = pkgs.xorg.libXft;
           libXinerama = pkgs.xorg.libXinerama;
-          fontconfig = pkgs.fontconfig;
-          freetype = pkgs.freetype;
+          libXrender = pkgs.xorg.libXrender;
         };
 
         # Example variant with custom config:
@@ -29,19 +30,21 @@
 
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
-            pkgs.pkg-config
-            pkgs.gnumake
             pkgs.gcc
+            pkgs.gnumake
+            pkgs.pkg-config
+            pkgs.clang-tools
           ];
           buildInputs = [
+            pkgs.fontconfig
+            pkgs.freetype
             pkgs.xorg.libX11
             pkgs.xorg.libXft
             pkgs.xorg.libXinerama
-            pkgs.fontconfig
-            pkgs.freetype
+            pkgs.xorg.libXrender
           ];
           shellHook = ''
-            echo "rootclock dev shell: run 'make' to build, 'make clean' to clean."
+            echo "rootclock dev shell: run 'make' to build, 'make clean' to clean, 'clang-format -i rootclock.c' to format."
           '';
         };
       }
