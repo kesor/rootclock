@@ -68,11 +68,6 @@ static int utf8decode(const char *s_in, long *u, int *err) {
   *err = 1;
   if (len == 0)
     return 1;
-  /* len is derived from the lookup table above; guard again to keep the
-   * leading_mask index safe even if the table is refactored. */
-  if (len < 0)
-    return 1;
-
   long cp = s[0] & leading_mask[len - 1];
   for (int i = 1; i < len; ++i) {
     if (s[i] == '\0' || (s[i] & 0xC0) != 0x80)
@@ -443,12 +438,12 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
       charexists = 1;
 
       hash = (unsigned int)utf8codepoint;
-      hash = ((hash >> 16) ^ hash) * 0x21F0AAAD;
-      hash = ((hash >> 15) ^ hash) * 0xD35A2D97;
-      /* Numbers from the MurmurHash3 finalizer to mix bits before indexing the
-       * small nomatches cache. MurmurHash3's finalizer is a compact way to
-       * decorrelate input bits and helps avoid clustering in this tiny table.
-       * See Austin Appleby's smhasher project. */
+      hash = ((hash >> 16) ^ hash) * MURMUR3_C1;
+      hash = ((hash >> 15) ^ hash) * MURMUR3_C2;
+      /* Final two rounds of the MurmurHash3 finalizer to mix bits before
+       * indexing the small nomatches cache. This decorrelates code points and
+       * helps avoid clustering. See Austin Appleby's smhasher project.
+       */
       h0 = ((hash >> 15) ^ hash) % LENGTH(nomatches);
       h1 = (hash >> 17) % LENGTH(nomatches);
       if (nomatches[h0] == utf8codepoint || nomatches[h1] == utf8codepoint)
@@ -475,9 +470,9 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
       if (match) {
         usedfont = fontset_xfont_create(drw, NULL, match);
         if (usedfont && XftCharExists(drw->dpy, usedfont->xfont, utf8codepoint)) {
-          for (curfont = drw->fonts; curfont->next; curfont = curfont->next) {
-            /* Intentionally empty: traverse to last font in the list. */
-          }
+          curfont = drw->fonts;
+          while (curfont->next)
+            curfont = curfont->next;
           curfont->next = usedfont;
         } else {
           fontset_xfont_free(usedfont);
