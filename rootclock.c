@@ -76,6 +76,8 @@ static int utf8decode(const char *s_in, long *u, int *err) {
     cp = (cp << 6) | (s[i] & 0x3F);
   }
   if (cp > 0x10FFFF || (cp >> 11) == 0x1B || cp < overlong[len - 1])
+    /* (cp >> 11) == 0x1B catches UTF-16 surrogate code points (0xD800–0xDFFF),
+     * which are disallowed in UTF-8. */
     return len;
 
   *err = 0;
@@ -171,7 +173,7 @@ static XRenderColor clr_to_xrender(const Clr *clr) {
   rc.red = clr->color.red;
   rc.green = clr->color.green;
   rc.blue = clr->color.blue;
-  rc.alpha = clr->color.alpha ? clr->color.alpha : 0xffff;
+  rc.alpha = clr->color.alpha;
   return rc;
 }
 
@@ -328,7 +330,7 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
   XftResult result;
   int charexists = 0, overflow = 0;
   static unsigned int nomatches[128], ellipsis_width, invalid_width;
-  static const char invalid[] = "�";
+  static const char invalid[] = "\xEF\xBF\xBD";
 
   if (!drw || (render && (!drw->scheme || !w)) || !text || !drw->fonts)
     return 0;
@@ -366,6 +368,7 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
     nextfont = NULL;
     while (*text) {
       utf8charlen = utf8decode(text, &utf8codepoint, &utf8err);
+      charexists = 0;
       for (curfont = drw->fonts; curfont; curfont = curfont->next) {
         charexists = charexists || XftCharExists(drw->dpy, curfont->xfont, utf8codepoint);
         if (charexists) {
@@ -433,6 +436,8 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
       hash = (unsigned int)utf8codepoint;
       hash = ((hash >> 16) ^ hash) * 0x21F0AAAD;
       hash = ((hash >> 15) ^ hash) * 0xD35A2D97;
+      /* Numbers from the MurmurHash3 finalizer to mix bits before indexing
+       * the small nomatches cache. */
       h0 = ((hash >> 15) ^ hash) % LENGTH(nomatches);
       h1 = (hash >> 17) % LENGTH(nomatches);
       if (nomatches[h0] == utf8codepoint || nomatches[h1] == utf8codepoint)
@@ -509,11 +514,13 @@ static int apply_effect_for_text(Drw *drw, int mode, int text_x, int text_y, uns
     return 0;
 
   GC mask_gc = XCreateGC(dpy, mask, 0, NULL);
-  if (mask_gc) {
-    XSetForeground(dpy, mask_gc, 0);
-    XFillRectangle(dpy, mask, mask_gc, 0, 0, text_w, text_h);
-    XFreeGC(dpy, mask_gc);
+  if (!mask_gc) {
+    XFreePixmap(dpy, mask);
+    return 0;
   }
+  XSetForeground(dpy, mask_gc, 0);
+  XFillRectangle(dpy, mask, mask_gc, 0, 0, text_w, text_h);
+  XFreeGC(dpy, mask_gc);
 
   Fnt *prev_font = drw->fonts;
   drw_setfontset(drw, font);
