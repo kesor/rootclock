@@ -1,6 +1,14 @@
 /* Appearance */
 static const char *bg_color = "#000000";
 
+/* Background handling */
+enum background_mode_cfg {
+    BG_MODE_SOLID,
+    BG_MODE_COPY,
+    BG_MODE_INVERT,
+};
+static const int background_mode = BG_MODE_SOLID;
+
 /* Time (1st line) */
 static const char *time_fonts[] = {
     "Inter:style=ExtraBold:size=120",

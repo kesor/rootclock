@@ -37,6 +37,7 @@ static int monitors_dirty = 1; /* force initial query */
 
 /* Time tracking for consistent updates */
 static time_t last_displayed_time = 0;
+static unsigned long invert_xor_mask = 0;
 
 static void signal_handler(int sig) {
   (void)sig;
@@ -66,6 +67,36 @@ static void update_monitor_cache(Display *dpy) {
     }
   }
   monitors_dirty = 0;
+}
+
+static void prepare_background(Drw *drw, Window target_win, int rx, int ry,
+                               unsigned int rw, unsigned int rh, Clr *bg_scm) {
+  (void)target_win;
+  if (!drw || rw == 0 || rh == 0)
+    return;
+
+  switch (background_mode) {
+  case BG_MODE_COPY:
+  case BG_MODE_INVERT: {
+    XCopyArea(drw->dpy, drw->root, drw->drawable, drw->gc, rx, ry, rw, rh, rx,
+              ry);
+    if (background_mode == BG_MODE_INVERT && invert_xor_mask) {
+      XGCValues prev;
+      if (XGetGCValues(drw->dpy, drw->gc, GCFunction | GCForeground, &prev)) {
+        XSetFunction(drw->dpy, drw->gc, GXxor);
+        XSetForeground(drw->dpy, drw->gc, invert_xor_mask);
+        XFillRectangle(drw->dpy, drw->drawable, drw->gc, rx, ry, rw, rh);
+        XSetForeground(drw->dpy, drw->gc, prev.foreground);
+        XSetFunction(drw->dpy, drw->gc, prev.function);
+      }
+    }
+  } break;
+  case BG_MODE_SOLID:
+  default:
+    drw_setscheme(drw, bg_scm);
+    drw_rect(drw, rx, ry, rw, rh, 1, 0);
+    break;
+  }
 }
 
 static int compositor_is_active(Display *dpy, int screen) {
@@ -135,8 +166,7 @@ static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
     return;
   }
 
-  drw_setscheme(drw, bg_scm);
-  drw_rect(drw, rx, ry, rw, rh, 1, 0);
+  prepare_background(drw, target_win, rx, ry, rw, rh, bg_scm);
 
   int time_h = tf->h;
   if (!tf->xfont) {
@@ -262,6 +292,14 @@ int main(void) {
   Window draw_win = root;
   Window desktop_win = None;
   int compositor_active = compositor_is_active(dpy, screen);
+
+  XWindowAttributes root_attr;
+  if (XGetWindowAttributes(dpy, root, &root_attr) && root_attr.visual) {
+    invert_xor_mask = root_attr.visual->red_mask | root_attr.visual->green_mask |
+                      root_attr.visual->blue_mask;
+  } else {
+    invert_xor_mask = 0x00ffffff;
+  }
 
   unsigned int rw = DisplayWidth(dpy, screen);
   unsigned int rh = DisplayHeight(dpy, screen);
