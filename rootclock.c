@@ -1,6 +1,7 @@
 /* rootclock - draw a centered time/date on each monitor's portion of the root window. */
 #define _POSIX_C_SOURCE 200809L
 #include <X11/Xft/Xft.h>
+#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xinerama.h>
@@ -67,9 +68,66 @@ static void update_monitor_cache(Display *dpy) {
   monitors_dirty = 0;
 }
 
-static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
-                                  Fnt *tf, Fnt *df, int show_date_flag,
-                                  Clr *bg_scm, Clr *time_scm, Clr *date_scm,
+static int compositor_is_active(Display *dpy, int screen) {
+  char sel_name[32];
+  snprintf(sel_name, sizeof sel_name, "_NET_WM_CM_S%d", screen);
+  Atom sel = XInternAtom(dpy, sel_name, False);
+  if (sel == None) {
+    return 0;
+  }
+  return XGetSelectionOwner(dpy, sel) != None;
+}
+
+static Window create_desktop_window(Display *dpy, int screen, Window root,
+                                    unsigned int w, unsigned int h,
+                                    unsigned long bg_pixel) {
+  XSetWindowAttributes swa;
+  memset(&swa, 0, sizeof swa);
+  swa.override_redirect = True;
+  swa.background_pixel = bg_pixel;
+  swa.event_mask = ExposureMask;
+
+  Window win = XCreateWindow(dpy, root, 0, 0, w, h, 0,
+                             DefaultDepth(dpy, screen), InputOutput,
+                             DefaultVisual(dpy, screen),
+                             CWOverrideRedirect | CWBackPixel | CWEventMask,
+                             &swa);
+  if (!win) {
+    return None;
+  }
+
+  Atom type_atom = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
+  Atom type_desktop = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+  if (type_atom != None && type_desktop != None) {
+    XChangeProperty(dpy, win, type_atom, XA_ATOM, 32, PropModeReplace,
+                    (unsigned char *)&type_desktop, 1);
+  }
+
+  Atom state_atom = XInternAtom(dpy, "_NET_WM_STATE", False);
+  Atom state_below = XInternAtom(dpy, "_NET_WM_STATE_BELOW", False);
+  if (state_atom != None && state_below != None) {
+    XChangeProperty(dpy, win, state_atom, XA_ATOM, 32, PropModeReplace,
+                    (unsigned char *)&state_below, 1);
+  }
+
+  XMapWindow(dpy, win);
+  XLowerWindow(dpy, win);
+  XFlush(dpy);
+
+  return win;
+}
+
+static void destroy_desktop_window(Display *dpy, Window *win) {
+  if (win && *win != None) {
+    XDestroyWindow(dpy, *win);
+    *win = None;
+  }
+}
+
+static void draw_block_for_region(Drw *drw, Window target_win, int rx, int ry,
+                                  int rw, int rh, Fnt *tf, Fnt *df,
+                                  int show_date_flag, Clr *bg_scm,
+                                  Clr *time_scm, Clr *date_scm,
                                   const char *tstr, const char *dstr,
                                   int block_yoff, int spacing) {
   if (show_date_flag && (!df || !date_scm || !dstr)) {
@@ -115,13 +173,14 @@ static void draw_block_for_region(Drw *drw, int rx, int ry, int rw, int rh,
     drw_text(drw, dx, dy, dw, date_h, 0, dstr, 0);
   }
 
-  drw_map(drw, drw->root, rx, ry, rw, rh);
+  drw_map(drw, target_win, rx, ry, rw, rh);
 }
 
 static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
                        Clr *bg_scm, Clr *time_scm, Clr *date_scm,
                        const char *time_fmt_s, const char *date_fmt_s,
-                       int block_y_off_s, int line_spacing_s) {
+                       int block_y_off_s, int line_spacing_s,
+                       Window target_win) {
   char tbuf[TIME_BUF_SIZE], dbuf[DATE_BUF_SIZE];
   time_t now = time(NULL);
 
@@ -169,8 +228,8 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
           rh > MAX_SCREEN_DIMENSION) {
         continue;
       }
-      draw_block_for_region(drw, rx, ry, rw, rh, tf, df, show_date_flag, bg_scm,
-                            time_scm, date_scm, tbuf,
+      draw_block_for_region(drw, target_win, rx, ry, rw, rh, tf, df,
+                            show_date_flag, bg_scm, time_scm, date_scm, tbuf,
                             show_date_flag ? dbuf : NULL, block_y_off_s,
                             line_spacing_s);
     }
@@ -178,7 +237,8 @@ static void render_all(Drw *drw, Fnt *tf, Fnt *df, int show_date_flag,
     int rw = DisplayWidth(drw->dpy, drw->screen);
     int rh = DisplayHeight(drw->dpy, drw->screen);
     draw_block_for_region(
-        drw, 0, 0, rw, rh, tf, df, show_date_flag, bg_scm, time_scm, date_scm,
+        drw, target_win, 0, 0, rw, rh, tf, df, show_date_flag, bg_scm,
+        time_scm, date_scm,
         tbuf, show_date_flag ? dbuf : NULL, block_y_off_s, line_spacing_s);
   }
 }
@@ -199,6 +259,9 @@ int main(void) {
   }
   int screen = DefaultScreen(dpy);
   Window root = RootWindow(dpy, screen);
+  Window draw_win = root;
+  Window desktop_win = None;
+  int compositor_active = compositor_is_active(dpy, screen);
 
   unsigned int rw = DisplayWidth(dpy, screen);
   unsigned int rh = DisplayHeight(dpy, screen);
@@ -237,6 +300,20 @@ int main(void) {
   if (!bg_scm || !time_scm || !date_scm)
     die("rootclock: color alloc failed");
 
+  unsigned long bg_pixel = XBlackPixel(dpy, screen);
+  if (compositor_active) {
+    desktop_win = create_desktop_window(dpy, screen, root, rw, rh, bg_pixel);
+    if (desktop_win != None) {
+      draw_win = desktop_win;
+      XSelectInput(dpy, desktop_win, ExposureMask);
+    } else {
+      compositor_active = 0;
+      fprintf(stderr,
+              "rootclock: compositor detected but failed to create "
+              "background window, falling back to root drawing\n");
+    }
+  }
+
   XSelectInput(dpy, root, ExposureMask | StructureNotifyMask);
 
   /* loop: redraw on expose/resize and on timer ticks */
@@ -248,13 +325,20 @@ int main(void) {
       XNextEvent(dpy, &ev);
       switch (ev.type) {
       case Expose:
-        need_redraw = 1;
+        if (ev.xexpose.window == root || ev.xexpose.window == draw_win)
+          need_redraw = 1;
         break;
       case ConfigureNotify: {
         unsigned int nrw = DisplayWidth(dpy, screen);
         unsigned int nrh = DisplayHeight(dpy, screen);
         if (nrw != drw->w || nrh != drw->h)
           drw_resize(drw, nrw, nrh);
+        if (desktop_win != None && (nrw != rw || nrh != rh)) {
+          XResizeWindow(dpy, desktop_win, nrw, nrh);
+          XLowerWindow(dpy, desktop_win);
+        }
+        rw = nrw;
+        rh = nrh;
         monitors_dirty = 1; /* mark monitors as needing refresh */
         need_redraw = 1;
       } break;
@@ -262,6 +346,21 @@ int main(void) {
         break;
       }
     }
+
+    int compositor_now = compositor_is_active(dpy, screen);
+    if (compositor_now && desktop_win == None) {
+      desktop_win = create_desktop_window(dpy, screen, root, rw, rh, bg_pixel);
+      if (desktop_win != None) {
+        draw_win = desktop_win;
+        XSelectInput(dpy, desktop_win, ExposureMask);
+        need_redraw = 1;
+      }
+    } else if (!compositor_now && desktop_win != None) {
+      destroy_desktop_window(dpy, &desktop_win);
+      draw_win = root;
+      need_redraw = 1;
+    }
+    compositor_active = compositor_now;
 
     /* Check if time has changed (for second-precise updates) */
     time_t current_time = time(NULL);
@@ -271,7 +370,7 @@ int main(void) {
 
     if (need_redraw) {
       render_all(drw, tf, df, show_date, bg_scm, time_scm, date_scm, time_fmt,
-                 date_fmt, block_y_off, line_spacing);
+                 date_fmt, block_y_off, line_spacing, draw_win);
       need_redraw = 0;
     }
 
@@ -370,6 +469,7 @@ int main(void) {
   free(date_scm);
   if (cached_monitors)
     XFree(cached_monitors);
+  destroy_desktop_window(dpy, &desktop_win);
   if (drw)
     drw_free(drw);
   XCloseDisplay(dpy);
