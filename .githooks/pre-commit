@@ -1,22 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-files=(rootclock.c config.def.h)
+c_files=(rootclock.c config.def.h)
+nix_files=(flake.nix default.nix nix/default.nix nix/package.nix)
 
 if ! command -v clang-format >/dev/null 2>&1; then
   printf 'clang-format not found in PATH. Please install it or adjust the dev shell.\n' >&2
   exit 1
 fi
 
-dirty=0
-for file in "${files[@]}"; do
+if ! command -v nixfmt >/dev/null 2>&1; then
+  printf 'nixfmt not found in PATH. Please install it or adjust the dev shell.\n' >&2
+  exit 1
+fi
+
+changed=0
+for file in "${c_files[@]}"; do
   if [ -f "$file" ]; then
     clang-format -i "$file"
     git add "$file"
-    dirty=1
+    changed=1
   fi
 done
 
-if [ "$dirty" -eq 1 ]; then
-  printf 'clang-format applied to C sources. Changes have been staged.\n'
+for file in "${nix_files[@]}"; do
+  if [ -f "$file" ]; then
+    nixfmt "$file"
+    git add "$file"
+    changed=1
+  fi
+done
+
+if [ "$changed" -eq 1 ]; then
+  printf 'Formatting hooks applied. Changes staged.\n'
 fi
