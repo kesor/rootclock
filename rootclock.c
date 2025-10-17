@@ -459,8 +459,9 @@ static int draw_text_core(Drw *drw, Drawable drawable, Visual *visual, Colormap 
       if (match) {
         usedfont = fontset_xfont_create(drw, NULL, match);
         if (usedfont && XftCharExists(drw->dpy, usedfont->xfont, utf8codepoint)) {
-          for (curfont = drw->fonts; curfont->next; curfont = curfont->next)
-            ;
+          for (curfont = drw->fonts; curfont->next; curfont = curfont->next) {
+            /* Intentionally empty: traverse to last font in the list. */
+          }
           curfont->next = usedfont;
         } else {
           fontset_xfont_free(usedfont);
