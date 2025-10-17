@@ -8,25 +8,17 @@
 
   outputs =
     { nixpkgs, flake-utils, ... }:
+    let
+      rootclockModule = import ./nix/default.nix;
+    in
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        package = pkgs.callPackage ./nix/package.nix { };
       in
       {
-        packages.default = pkgs.callPackage ./default.nix {
-          fontconfig = pkgs.fontconfig;
-          freetype = pkgs.freetype;
-          libX11 = pkgs.xorg.libX11;
-          libXft = pkgs.xorg.libXft;
-          libXinerama = pkgs.xorg.libXinerama;
-          libXrender = pkgs.xorg.libXrender;
-        };
-
-        # Example variant with custom config:
-        # packages.withConfig = pkgs.callPackage ./default.nix {
-        #   conf = builtins.readFile ./my-config.def.h;
-        # };
+        packages.default = package;
 
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
@@ -48,5 +40,7 @@
           '';
         };
       }
-    );
+    ) // {
+      homeManagerModules.rootclock = rootclockModule;
+    };
 }

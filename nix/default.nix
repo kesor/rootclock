@@ -8,14 +8,10 @@
 let
   cfg = config.programs.rootclock;
 
-  confArg = if cfg.configFile != null then cfg.configFile else null;
+  packageArgs =
+    if cfg.configFile != null then { conf = cfg.configFile; } else { };
 
-  defaultPkg = pkgs.callPackage (pkgs.fetchFromGitHub {
-    owner = "kesor";
-    repo = "rootclock";
-    rev = "b5784ef8d382c4a61fd05aa0a526e3bb15acb0c2";
-    sha256 = "sha256-rhuIplXDz5or0FC6uY+E7Q7CaF5IgUKaYN2zUCdQzdY=";
-  }) { conf = confArg; };
+  defaultPkg = pkgs.callPackage ./package.nix packageArgs;
 
   rootclockPkg = if cfg.package != null then cfg.package else defaultPkg;
 in

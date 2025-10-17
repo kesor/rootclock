@@ -13,7 +13,7 @@ service:
 ```nix
 { inputs, ... }:
 {
-  imports = [ inputs.rootclock.nixModules.rootclock ];
+  imports = [ inputs.rootclock.homeManagerModules.rootclock ];
 
   programs.rootclock = {
     enable = true;
