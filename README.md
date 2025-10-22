@@ -1,5 +1,7 @@
 # rootclock
 
+![](rootclock.png)
+
 rootclock is a simple X program that draws a configurable clock (and optionally date) directly onto the root window of all monitors.
 It is designed to run alongside dwm or other window managers, without interfering with their behavior.
 
